@@ -29,6 +29,10 @@ build-backend = "uv_build"
 module-name = "cs336_basics"
 module-root = ""
 
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple"
+default = true
+
 [tool.uv]
 package = true
 python-preference = "managed"
