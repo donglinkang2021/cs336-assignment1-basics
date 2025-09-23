@@ -5,3 +5,11 @@
 3. Train a Transformer LM on the TinyStories dataset.
 4. Generate samples and evaluate perplexity using the trained Transformer LM.
 5. Train models on OpenWebText and submit your attained perplexities to a leaderboard.
+
+## Milestone: Tokenizer
+
+```bash
+uv run pytest tests/test_train_bpe.py
+```
+
+- [ ] `run_train_bpe`
