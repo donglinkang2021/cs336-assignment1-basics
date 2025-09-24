@@ -2,7 +2,10 @@
 A module for Byte-Pair Encoding (BPE) tokenizer training.
 """
 
-def get_stats(ids, counts=None):
+import regex as re
+from typing import Tuple, List, Dict
+
+def get_stats(ids, counts=None) -> Dict[Tuple[int, int], int]:
     """
     Given a list of integers, return a dictionary of counts of consecutive pairs.
     Example: [1, 2, 3, 1, 2] -> {(1, 2): 2, (2, 3): 1, (3, 1): 1}
@@ -14,7 +17,7 @@ def get_stats(ids, counts=None):
     return counts
 
 
-def merge(ids, pair, idx):
+def merge(ids: List[int], pair: Tuple[int, int], idx: int) -> List[int]:
     """
     In the list of integers (ids), replace all consecutive occurrences
     of pair with the new integer token idx.
@@ -31,7 +34,9 @@ def merge(ids, pair, idx):
             i += 1
     return newids
 
-def train_bpe(text: str, vocab_size: int, special_tokens: list[str]):
+def train_bpe(
+        text: str, vocab_size: int, special_tokens: list[str]
+    ) -> Tuple[Dict[int, bytes], List[Tuple[bytes, bytes]]]:
     """
     Train a BPE tokenizer from a given text.
     """
