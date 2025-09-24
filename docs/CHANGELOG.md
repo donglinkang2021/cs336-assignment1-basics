@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.2] - 20250924
+
+- [code] pre-tokenization, use `regex.split` and `regex.finditer` to handle special tokens and pre-tokenization, make it to ` 2.282496929168701 < 1.5`, but still too slow
+
+### Record
+
+看了一下 `gpt2_bytes_to_unicode` 的实现，他的主要原理就是把 0-255中的 unprintable 的字符全部去掉，将可以打印的 0-255 的字符全部放在前面从0开始编码（一共188个可打印的），后面的68个字符就把 256+i 的编码塞到前面去；
+
 ## [0.0.1] - 20250923
 
 - [code] implement the simple version of bpe refer to the minbpe of karpathy, but fail 3/3 cases

@@ -21,7 +21,8 @@ def test_train_bpe_speed():
         special_tokens=["<|endoftext|>"],
     )
     end_time = time.time()
-    assert end_time - start_time < 1.5
+    cost_time = end_time - start_time
+    assert cost_time < 1.5
 
 
 def test_train_bpe():
