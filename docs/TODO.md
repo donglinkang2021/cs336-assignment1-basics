@@ -9,8 +9,7 @@
 ## Milestone: Tokenizer
 
 ```bash
-uv run pytest tests/test_train_bpe.py::test_train_bpe_speed
-uv run pytest tests/test_train_bpe.py::test_train_bpe_speed
+uv run pytest tests/test_train_bpe.py
+uv run pytest tests/test_tokenizer.py
 ```
 
-- [ ] `run_train_bpe`

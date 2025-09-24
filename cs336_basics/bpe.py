@@ -1,134 +1,209 @@
-"""
-A module for Byte-Pair Encoding (BPE) tokenizer training.
-"""
+import os
 import regex as re
+from typing import BinaryIO
+from multiprocessing import Pool
 from collections import defaultdict
 
-# Regex pattern from GPT-2, see 2.4 BPE Tokenizer Training.md
-GPT2_PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+# refer: https://blog.csdn.net/Bug_makerACE/article/details/149248369
 
-def get_stats(splits: dict[tuple[int, ...], int]) -> defaultdict[tuple[int, int], int]:
-    """
-    Given a dictionary of token sequences and their frequencies,
-    return a dictionary of counts of consecutive pairs.
-    """
-    pair_counts = defaultdict(int)
-    for sequence, freq in splits.items():
-        for i in range(len(sequence) - 1):
-            pair = (sequence[i], sequence[i+1])
-            pair_counts[pair] += freq
-    return pair_counts
+def train_bpe(
+    input_path: str,
+    vocab_size: int,
+    special_tokens: list[str],
+    num_processes: int = 8
+) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    # 1. Vocabulary Initialization
+    vocab = {i: bytes([i]) for i in range(256)}
+    for tok in special_tokens:
+        vocab[len(vocab)] = tok.encode("utf-8")
 
+    # 2. Pre-tokenization
+    with open(input_path, "rb") as f:
+        boundaries = find_chunk_boundaries(f, num_processes, "<|endoftext|>".encode("utf-8"))
 
-def merge(sequence: tuple[int, ...], pair: tuple[int, int], idx: int) -> tuple[int, ...]:
-    """
-    In the sequence of integers, replace all consecutive occurrences
-    of pair with the new integer token idx.
-    """
-    new_sequence = []
+    task_args = [(input_path, start, end, special_tokens) for start, end in zip(boundaries[:-1], boundaries[1:])]
+    with Pool(processes=num_processes) as pool:
+        chunk_results = pool.map(process_chunk, task_args)
+    
+    # 3. Compute BPE merges
+    pre_tokens_bytes: list[list[bytes]] = [
+        token for chunk in chunk_results for token in chunk
+    ] # list[token], each token is list[bytes]
+    merges: list[tuple[bytes, bytes]] = []
+    
+    # Get all pairs from the pre-tokenized bytes
+    pair_to_indices, counts = _get_pair_counts(pre_tokens_bytes)
+
+    idx = len(vocab)
+    while idx < vocab_size:
+        if not counts:
+            break
+        
+        # Find the most frequent pair
+        max_pair = max(counts, key=lambda p: (counts[p], p))
+
+        merges.append(max_pair)
+        a, b = max_pair
+        new_token = a + b
+        vocab[idx] = new_token
+        idx += 1
+
+        # Merge the most frequent pair in all affected tokens
+        # Use affected_indices to only update tokens that contain the max_pair
+        affected_indices = pair_to_indices[max_pair].copy()
+        for j in affected_indices:
+            token_bytes = pre_tokens_bytes[j]
+            if len(token_bytes) < 2:
+                continue
+            # 1. Decrement counts for pairs in the old token
+            # just ignore all the pair count in the old token right now
+            _update_counts(j, token_bytes, pair_to_indices, counts, remove=True)
+
+            # 2. Merge the pair to create the new token
+            # token_bytes[b'a', b'b', b'c'], max_pair(b'a', b'b') 
+            # -> new_token_bytes[b'ab', b'c']
+            new_token_bytes = _merge_pair(token_bytes, max_pair, new_token)
+
+            # 3. Increment counts for pairs in the new token
+            # add all the pair count in the new token
+            _update_counts(j, new_token_bytes, pair_to_indices, counts, remove=False)
+
+            pre_tokens_bytes[j] = new_token_bytes
+
+    return vocab, merges
+
+def _get_pair_counts(
+        pre_tokens_bytes: list[list[bytes]]
+    ) -> tuple[
+        defaultdict[tuple[bytes, bytes], set], 
+        defaultdict[tuple[bytes, bytes], int]
+    ]:
+    """Counts initial byte pair frequencies."""
+    pair_to_indices = defaultdict(set)
+    counts = defaultdict(int)
+    for i, token_bytes in enumerate(pre_tokens_bytes):
+        for pair in zip(token_bytes, token_bytes[1:]):
+            pair_to_indices[pair].add(i)
+            counts[pair] += 1
+    return pair_to_indices, counts
+
+def _merge_pair(
+    token_bytes: list[bytes], pair: tuple[bytes, bytes], new_token: bytes
+) -> list[bytes]:
+    """Merges a pair of bytes into a new token within a list of bytes."""
+    new_token_bytes = []
     i = 0
-    while i < len(sequence):
-        if i < len(sequence) - 1 and sequence[i] == pair[0] and sequence[i+1] == pair[1]:
-            new_sequence.append(idx)
+    while i < len(token_bytes):
+        if i < len(token_bytes) - 1 and (token_bytes[i], token_bytes[i+1]) == pair:
+            new_token_bytes.append(new_token)
             i += 2
         else:
-            new_sequence.append(sequence[i])
+            new_token_bytes.append(token_bytes[i])
             i += 1
-    return tuple(new_sequence)
+    return new_token_bytes
 
-def _process_chunk(text_chunk: str, special_tokens: list[str]) -> defaultdict[bytes, int]:
-    """
-    Processes a chunk of text: splits by special tokens, pre-tokenizes,
-    and counts frequencies of resulting words.
-    This function is designed to be called by parallel workers.
-    """
-    word_freqs = defaultdict(int)
-
-    # Create a regex pattern to split the text by special tokens.
-    # Escape special characters in tokens that might be regex metacharacters.
-    if special_tokens:
-        special_pattern = "|".join(re.escape(st) for st in special_tokens)
-        sub_chunks = re.split(f"({special_pattern})", text_chunk)
-    else:
-        sub_chunks = [text_chunk]
-
-    for sub_chunk in sub_chunks:
-        if not sub_chunk:
-            continue
-        # If the sub_chunk is a special token, we don't pre-tokenize it.
-        # We count it as a whole word. The main training function will handle it.
-        if sub_chunk in special_tokens:
-            word_freqs[sub_chunk.encode("utf-8")] += 1
+def _update_counts(
+    token_idx: int,
+    token_bytes: list[bytes],
+    pair_to_indices: defaultdict[tuple[bytes, bytes], set],
+    counts: defaultdict[tuple[bytes, bytes], int],
+    *,
+    remove: bool,
+):
+    """Updates pair counts and indices for a token."""
+    for pair in zip(token_bytes, token_bytes[1:]):
+        if remove:
+            counts[pair] -= 1
+            pair_to_indices[pair].discard(token_idx)
+            if counts[pair] == 0:
+                del counts[pair]
+                del pair_to_indices[pair]
         else:
-            # Apply the GPT-2 regex pre-tokenizer.
-            for match in re.finditer(GPT2_PAT, sub_chunk):
-                word_bytes = match.group(0).encode("utf-8")
-                word_freqs[word_bytes] += 1
-    return word_freqs
+            counts[pair] += 1
+            pair_to_indices[pair].add(token_idx)
 
-
-def train_bpe(text: str, vocab_size: int, special_tokens: list[str]):
+def find_chunk_boundaries(
+    file: BinaryIO, 
+    desired_num_chunks: int, 
+    split_special_token: bytes
+) -> list[int]:
     """
-    Train a BPE tokenizer from a given text using regex pre-tokenization
-    and an optimized merge loop.
+    Chunk the file into parts that can be counted independently.
+    May return fewer chunks if the boundaries end up overlapping.
     """
-    assert vocab_size >= 256
-    
-    # 1. Pre-tokenize and count word frequencies.
-    # This part can be parallelized by splitting `text` into chunks
-    # and running _process_chunk on each chunk.
-    word_freqs = _process_chunk(text, special_tokens)
+    assert isinstance(split_special_token, bytes), (
+        "Must represent special token as a bytestring"
+    )
 
-    # Convert byte strings to tuples of integers.
-    splits = {tuple(word): freq for word, freq in word_freqs.items()}
+    # Get total file size in bytes
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
 
-    # Base vocabulary consists of all 256 bytes.
-    vocab = {idx: bytes([idx]) for idx in range(256)}
-    
-    # Add special tokens to the vocabulary first.
-    # They are not part of the merging process.
-    for i, token_str in enumerate(special_tokens):
-        idx = 256 + i
-        vocab[idx] = token_str.encode("utf-8")
+    chunk_size = file_size // desired_num_chunks
 
-    # The number of merges is the desired vocab size minus the initial tokens.
-    num_merges = vocab_size - len(vocab)
-    merges = {}  # (b1, b2) -> new_idx
+    # Initial guesses for chunk boundary locations, uniformly spaced
+    # Chunks start on previous index, don't include last index
+    chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
+    chunk_boundaries[-1] = file_size
 
-    # 2. Iteratively merge the most frequent pair.
-    for i in range(num_merges):
-        # 3. Count pairs in all our pre-token sequences.
-        stats = get_stats(splits)
-        if not stats:
-            break  # No more pairs to merge.
+    mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
 
-        # 4. Find the most frequent pair.
-        # Deterministically break ties by preferring the lexicographically greater pair.
-        pair = max(stats, key=lambda p: (stats[p], p))
+    for bi in range(1, len(chunk_boundaries) - 1):
+        initial_position = chunk_boundaries[bi]
+        file.seek(initial_position)  # Start at boundary guess
+        while True:
+            mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
 
-        # The new token id is the next available integer.
-        idx = 256 + len(special_tokens) + i
+            # If EOF, this boundary should be at the end of the file
+            if mini_chunk == b"":
+                chunk_boundaries[bi] = file_size
+                break
 
-        # 5. Merge the most frequent pair.
-        new_splits = {}
-        for sequence, freq in splits.items():
-            # This is still a full pass over the splits. A more advanced optimization
-            # would be to only update the affected splits.
-            new_sequence = merge(sequence, pair, idx)
-            new_splits[new_sequence] = new_splits.get(new_sequence, 0) + freq
-        splits = new_splits
+            # Find the special token in the mini chunk
+            found_at = mini_chunk.find(split_special_token)
+            if found_at != -1:
+                true_position = initial_position + found_at
+                chunk_boundaries[bi] = true_position
+                break
 
-        # Store the merge rule and update the vocabulary.
-        merges[pair] = idx
-        vocab[idx] = vocab[pair[0]] + vocab[pair[1]]
+            initial_position += mini_chunk_size
 
-    # Convert merges dict to the required list of tuples format.
-    merges_list = sorted(merges.items(), key=lambda p: p[1])
-    # The final list should contain byte values, not integer IDs.
-    final_merges = []
-    for (p0, p1), idx in merges_list:
-        # We need to look up the byte representation for p0 and p1
-        # which could themselves be merged tokens.
-        final_merges.append((vocab[p0], vocab[p1]))
+    # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
+    return sorted(set(chunk_boundaries))
 
-    return vocab, final_merges
+
+
+def process_chunk(args: tuple[str, int, int, list[str]]) -> list[list[bytes]]:
+    """
+    Processes a chunk of the input file and returns byte pair frequency counts.
+
+    Args:
+        input_path (str): The path of input file.
+        start (int): Start byte offset of the chunk.
+        end (int): End byte offset of the chunk.
+        special_tokens (list[str]): List of special tokens that should not be merged across.
+
+    Returns:
+        pre_token_bytes (list[list[bytes]]): list of tokens, where each token is a list of bytes
+    """
+    input_path, start, end, special_tokens = args
+    with open(input_path, "rb") as file:
+        file.seek(start)
+        chunk = file.read(end - start).decode("utf-8", errors="ignore")
+
+    # 1. Remove special tokens by splitting the chunk at those tokens
+    pattern = "|".join(re.escape(tok) for tok in special_tokens)
+    documents = re.split(pattern, chunk)
+
+    # 2. Pre-tokenize and count byte pair frequencies
+    pre_tokens_bytes: list[list[bytes]] = []
+    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    for doc in documents:
+        tokens = [match.group(0).encode("utf-8") for match in re.finditer(PAT, doc)]
+        for token in tokens:
+            token_bytes = [bytes([b]) for b in token]
+            pre_tokens_bytes.append(token_bytes)
+
+    return pre_tokens_bytes
+

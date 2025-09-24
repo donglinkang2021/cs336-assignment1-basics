@@ -2,6 +2,7 @@
 
 ## [0.0.2] - 20250924
 
+- [code] pre-tokenization + multiprocessing, pass the `train_bpe`
 - [code] pre-tokenization, use `regex.split` and `regex.finditer` to handle special tokens and pre-tokenization, make it to ` 2.282496929168701 < 1.5`, but still too slow
 
 ### Record
