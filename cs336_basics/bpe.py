@@ -20,8 +20,12 @@ def train_bpe(
     # 2. Pre-tokenization
     with open(input_path, "rb") as f:
         boundaries = find_chunk_boundaries(f, num_processes, "<|endoftext|>".encode("utf-8"))
-
-    task_args = [(input_path, start, end, special_tokens) for start, end in zip(boundaries[:-1], boundaries[1:])]
+        chunk_list = []
+        for start, end in zip(boundaries[:-1], boundaries[1:]):
+            f.seek(start)
+            chunk = f.read(end - start).decode("utf-8", errors="ignore")
+            chunk_list.append(chunk)
+    task_args = [(chunk, special_tokens, False) for chunk in chunk_list]
     with Pool(processes=num_processes) as pool:
         chunk_results = pool.map(process_chunk, task_args)
     
@@ -173,37 +177,23 @@ def find_chunk_boundaries(
     return sorted(set(chunk_boundaries))
 
 
-
-def process_chunk(args: tuple[str, int, int, list[str]]) -> list[list[bytes]]:
-    """
-    Processes a chunk of the input file and returns byte pair frequency counts.
-
-    Args:
-        input_path (str): The path of input file.
-        start (int): Start byte offset of the chunk.
-        end (int): End byte offset of the chunk.
-        special_tokens (list[str]): List of special tokens that should not be merged across.
-
-    Returns:
-        pre_token_bytes (list[list[bytes]]): list of tokens, where each token is a list of bytes
-    """
-    input_path, start, end, special_tokens = args
-    with open(input_path, "rb") as file:
-        file.seek(start)
-        chunk = file.read(end - start).decode("utf-8", errors="ignore")
-
-    # 1. Remove special tokens by splitting the chunk at those tokens
+def process_chunk(args: tuple[str, list[str], bool]) -> list[list[bytes]]:
+    chunk, special_tokens, keep_special_tokens = args
     pattern = "|".join(re.escape(tok) for tok in special_tokens)
-    documents = re.split(pattern, chunk)
+    if keep_special_tokens and pattern:
+        pattern = f"({pattern})"
+    segments = re.split(pattern, chunk) if pattern else [chunk]
 
-    # 2. Pre-tokenize and count byte pair frequencies
     pre_tokens_bytes: list[list[bytes]] = []
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    for doc in documents:
-        tokens = [match.group(0).encode("utf-8") for match in re.finditer(PAT, doc)]
-        for token in tokens:
-            token_bytes = [bytes([b]) for b in token]
+
+    for segment in segments:
+        if keep_special_tokens and segment in special_tokens:
+            token_bytes = [segment.encode("utf-8")]
             pre_tokens_bytes.append(token_bytes)
-
+        else:
+            tokens = [match.group(0).encode("utf-8") for match in re.finditer(PAT, segment)]
+            for token in tokens:
+                token_bytes = [bytes([b]) for b in token]
+                pre_tokens_bytes.append(token_bytes)
     return pre_tokens_bytes
-
