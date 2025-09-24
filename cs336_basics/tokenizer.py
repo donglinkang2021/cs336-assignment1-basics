@@ -14,6 +14,8 @@ class Tokenizer:
         self.vocab = vocab
         self.vocab_reversed = {v: k for k, v in self.vocab.items()}  # bytes: int
         self.merges = merges
+        # Create a dictionary for quick lookup of merge ranks
+        self.merge_ranks = {pair: i for i, pair in enumerate(self.merges)}
         self.special_tokens = sorted(special_tokens or [], key=lambda x: -len(x))
 
     @classmethod
@@ -55,12 +57,35 @@ class Tokenizer:
             list[int]: A list of token IDs representing the encoded text.
         """
         token_ids = []
+        # 1. Pre-tokenize the input text into chunks, handling special tokens.
         pre_tokens_list = process_chunk((text, self.special_tokens, True))
+
         for tokens in pre_tokens_list:
-            for pair in self.merges:
-                new_tok = pair[0] + pair[1]
-                tokens = _merge_pair(tokens, pair, new_tok)
+            # If the chunk is a special token, directly look up its ID.
+            if len(tokens) == 1 and tokens[0] in self.vocab_reversed:
+                token_id = self.vocab_reversed.get(tokens[0])
+                if token_id is not None:
+                    token_ids.append(token_id)
+                    continue
+
+            # 2. Iteratively merge pairs in each chunk based on merge ranks.
+            while len(tokens) >= 2:
+                # Find all current pairs in the token list.
+                pairs = list(zip(tokens, tokens[1:]))
+                
+                # Find the pair with the lowest merge rank (highest priority).
+                # Use a large number (infinity) for pairs not in our merge rules.
+                best_pair = min(pairs, key=lambda p: self.merge_ranks.get(p, float('inf')))
+
+                # If the best pair is not in our merge rules, no more merges are possible.
+                if best_pair not in self.merge_ranks:
+                    break
+                
+                # 3. Merge the best pair into a new token.
+                new_tok = best_pair[0] + best_pair[1]
+                tokens = _merge_pair(tokens, best_pair, new_tok)
             
+            # 4. Convert the final merged tokens to their corresponding IDs.
             for token in tokens:
                 token_id = self.vocab_reversed.get(token)
                 if token_id is not None:
