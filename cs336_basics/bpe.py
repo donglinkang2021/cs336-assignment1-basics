@@ -4,8 +4,6 @@ from typing import BinaryIO
 from multiprocessing import Pool
 from collections import defaultdict
 
-# refer: https://blog.csdn.net/Bug_makerACE/article/details/149248369
-
 def train_bpe(
     input_path: str,
     vocab_size: int,
