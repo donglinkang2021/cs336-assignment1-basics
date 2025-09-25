@@ -2,6 +2,7 @@
 
 ## [0.0.3] - 20250925
 
+- [code] swiglu FFN layer, pass `test_swiglu`
 - [code] rmsnorm layer, pass `test_rmsnorm`
 - [code] linear/embedding layer, pass `test_linear/test_embedding`
 

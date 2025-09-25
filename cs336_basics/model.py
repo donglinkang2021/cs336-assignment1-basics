@@ -101,3 +101,20 @@ class RMSNorm(nn.Module):
         var = x.pow(2).mean(dim=-1, keepdim=True) + self.eps
         x_out = x * var.rsqrt() * self.weight
         return x_out.to(in_dtype)
+
+# uv run pytest -k test_swiglu
+class SwiGLU(nn.Module):
+    """ SwiGLU FFN """
+    d_model: int
+    d_ff: int
+    
+    def __init__(self, d_model:int, d_ff:int) -> None:
+        super().__init__()
+        self.fc_1 = Linear(in_features=d_model, out_features=d_ff)
+        self.fc_2 = Linear(in_features=d_ff, out_features=d_model)
+        self.fc_3 = Linear(in_features=d_model, out_features=d_ff)
+    
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        # [..., d_model] -> [..., d_model]
+        x_1 = self.fc_1(x) # [..., d_model] -> [..., d_ff]
+        return self.fc_2(x_1 * torch.sigmoid(x_1) * self.fc_3(x))
