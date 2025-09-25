@@ -2,6 +2,7 @@
 
 ## [0.0.3] - 20250925
 
+- [code] softmax, scaled_dot_product_attention, multihead_self_attention, pass the test cases
 - [code] rope, pass `test_rope`
 - [code] swiglu FFN layer, pass `test_swiglu`
 - [code] rmsnorm layer, pass `test_rmsnorm`

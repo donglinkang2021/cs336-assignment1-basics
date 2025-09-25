@@ -141,7 +141,8 @@ class RotaryPositionalEmbedding(nn.Module):
     
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
         # [..., seq_len, dim], [seq_len,] -> [..., seq_len, dim]
-        return apply_rotary_emb(x, self.cos_sin[token_positions])
+        cos_sin = self.cos_sin[:x.size(-2)] if token_positions is None else self.cos_sin[token_positions]
+        return apply_rotary_emb(x, cos_sin)
 
 
 def precompute_freqs_cis(head_dim: int, max_len: int, theta: float = 10000.0) -> torch.Tensor:
@@ -160,3 +161,85 @@ def apply_rotary_emb(x:torch.Tensor, cos_sin:torch.Tensor):
                          x1 * sin + x2 * cos], dim=-1)
     return x_out.reshape(*x.shape).type_as(x)
 
+# uv run pytest -k test_scaled_dot_product_attention
+# uv run pytest -k test_4d_scaled_dot_product_attention
+from .nn_utils import softmax
+def scaled_dot_product_attention(
+    Q: torch.Tensor,
+    K: torch.Tensor,
+    V: torch.Tensor,
+    mask: torch.Tensor = None,
+) -> torch.Tensor:
+    D = Q.size(-1)
+    scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(D)
+    if mask is not None:
+        scores = scores.masked_fill(mask == 0, float('-inf'))
+    attn_weights = softmax(scores, dim=-1)
+    output = torch.matmul(attn_weights, V)
+    return output
+
+# uv run pytest -k test_multihead_self_attention
+# pass tests/test_model.py::test_multihead_self_attention
+from einops import rearrange
+class MultiheadSelfAttention(nn.Module):
+    """ Multi-head self-attention layer """
+    d_model: int
+    num_heads: int
+    
+    def __init__(self, d_model:int, num_heads:int) -> None:
+        super().__init__()
+        assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.head_dim = d_model // num_heads
+        self.fc_qkv = Linear(d_model, 3*d_model)
+        self.fc_out = Linear(d_model, d_model)
+    
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        # [batch, seq_len, d_model] -> [batch, seq_len, d_model]
+        seq_len = x.size(1)
+        qkv = self.fc_qkv(x)
+        qkv = rearrange(qkv, 'B T (nH Hs) -> B nH T Hs', Hs=self.head_dim)
+        xq, xk, xv = torch.chunk(qkv, 3, dim=1)
+        mask = torch.ones((seq_len, seq_len), device=x.device).tril()
+        mask = rearrange(mask, 'T1 T2 -> 1 1 T1 T2')
+        xo = scaled_dot_product_attention(xq, xk, xv, mask)
+        xo = rearrange(xo, 'B nH T Hs -> B T (nH Hs)')
+        return self.fc_out(xo)
+
+# uv run pytest -k test_multihead_self_attention
+# pass tests/test_model.py::test_multihead_self_attention_with_rope
+class MultiheadRoPESelfAttention(nn.Module):
+    """ Multi-head self-attention layer """
+    d_model: int
+    num_heads: int
+    
+    def __init__(
+        self, 
+        d_model:int, 
+        num_heads:int,
+        max_seq_len:int,
+        theta:float,
+    ) -> None:
+        super().__init__()
+        assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.head_dim = d_model // num_heads
+        self.fc_qkv = Linear(d_model, 3*d_model)
+        self.fc_out = Linear(d_model, d_model)
+        self.rope = RotaryPositionalEmbedding(theta, self.head_dim, max_seq_len)
+    
+    def forward(self, x:torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+        # [batch, seq_len, d_model] -> [batch, seq_len, d_model]
+        seq_len = x.size(1)
+        qkv = self.fc_qkv(x)
+        qkv = rearrange(qkv, 'B T (nH Hs) -> B nH T Hs', Hs=self.head_dim)
+        xq, xk, xv = torch.chunk(qkv, 3, dim=1)
+        xq = self.rope(xq, token_positions)
+        xk = self.rope(xk, token_positions)
+        mask = torch.ones((seq_len, seq_len), device=x.device).tril()
+        mask = rearrange(mask, 'T1 T2 -> 1 1 T1 T2')
+        xo = scaled_dot_product_attention(xq, xk, xv, mask)
+        xo = rearrange(xo, 'B nH T Hs -> B T (nH Hs)')
+        return self.fc_out(xo)
