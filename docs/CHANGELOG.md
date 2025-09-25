@@ -2,8 +2,14 @@
 
 ## [0.0.3] - 20250925
 
+- [handout] 35/50
+- [code] `uv run pytest tests/test_optimizer.py`
+- [code] `uv run pytest tests/test_nn_utils.py`
+- [code] gradient clipping, pass `test_gradient_clipping`
+- [code] learning rate scheduler, pass `test_get_lr_cosine_schedule`
+- [code] adamw, pass `test_adamw`
 - [code] cross entropy, pass `test_cross_entropy`
-- [code] pass all the test cases in `tests/test_model.py`
+- [code] pass all the test cases in `uv run pytest tests/test_model.py`
 - [code] transformer LM, pass `test_transformer_lm`
 - [code] transformer block, pass `test_transformer_block`
 - [code] softmax, scaled_dot_product_attention, multihead_self_attention, pass the test cases
@@ -33,6 +39,17 @@ tests/test_model.py::test_rmsnorm PASSED
 tests/test_model.py::test_rope PASSED
 tests/test_model.py::test_silu_matches_pytorch PASSED
 ============================== 13 passed in 2.28s ===============================
+(cs336-basics) [root:assignment1-basics]$ uv run pytest tests/test_nn_utils.py
+============================== test session starts ==============================
+tests/test_nn_utils.py::test_softmax_matches_pytorch PASSED
+tests/test_nn_utils.py::test_cross_entropy PASSED
+tests/test_nn_utils.py::test_gradient_clipping PASSED
+=============================== 3 passed in 2.01s ===============================
+(cs336-basics) [root:assignment1-basics]$ uv run pytest tests/test_optimizer.py
+============================== test session starts ==============================
+tests/test_optimizer.py::test_adamw PASSED
+tests/test_optimizer.py::test_get_lr_cosine_schedule PASSED
+=============================== 2 passed in 3.04s ===============================
 ```
 
 ## [0.0.2] - 20250924
