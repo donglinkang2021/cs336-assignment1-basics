@@ -102,6 +102,10 @@ class RMSNorm(nn.Module):
         x_out = x * var.rsqrt() * self.weight
         return x_out.to(in_dtype)
 
+# uv run pytest -k test_silu
+def silu(x:torch.Tensor) -> torch.Tensor:
+    return x * torch.sigmoid(x)
+
 # uv run pytest -k test_swiglu
 class SwiGLU(nn.Module):
     """ SwiGLU FFN """
@@ -118,8 +122,7 @@ class SwiGLU(nn.Module):
     
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         # [..., d_model] -> [..., d_model]
-        x_1 = self.w1(x) # [..., d_model] -> [..., d_ff]
-        return self.w2(x_1 * torch.sigmoid(x_1) * self.w3(x))
+        return self.w2(silu(self.w1(x)) * self.w3(x))
 
 # uv run pytest -k test_rope
 class RotaryPositionalEmbedding(nn.Module):

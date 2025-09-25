@@ -2,6 +2,7 @@
 
 ## [0.0.3] - 20250925
 
+- [code] pass all the test cases in `tests/test_model.py`
 - [code] transformer LM, pass `test_transformer_lm`
 - [code] transformer block, pass `test_transformer_block`
 - [code] softmax, scaled_dot_product_attention, multihead_self_attention, pass the test cases
@@ -9,6 +10,29 @@
 - [code] swiglu FFN layer, pass `test_swiglu`
 - [code] rmsnorm layer, pass `test_rmsnorm`
 - [code] linear/embedding layer, pass `test_linear/test_embedding`
+
+### Record
+
+终于全部都过了，自己在Attention部分参考`nanovllm`的`qwen3`写法来写集成的rope -> [here](https://github.com/GeeeekExplorer/nano-vllm/blob/main/nanovllm/models/qwen3.py#L53)，目前结果如下：
+
+```bash
+(cs336-basics) [root:assignment1-basics]$ uv run pytest tests/test_model.py
+============================== test session starts ==============================
+tests/test_model.py::test_linear PASSED
+tests/test_model.py::test_embedding PASSED
+tests/test_model.py::test_swiglu PASSED
+tests/test_model.py::test_scaled_dot_product_attention PASSED
+tests/test_model.py::test_4d_scaled_dot_product_attention PASSED
+tests/test_model.py::test_multihead_self_attention PASSED
+tests/test_model.py::test_multihead_self_attention_with_rope PASSED
+tests/test_model.py::test_transformer_lm PASSED
+tests/test_model.py::test_transformer_lm_truncated_input PASSED
+tests/test_model.py::test_transformer_block PASSED
+tests/test_model.py::test_rmsnorm PASSED
+tests/test_model.py::test_rope PASSED
+tests/test_model.py::test_silu_matches_pytorch PASSED
+============================== 13 passed in 2.28s ===============================
+```
 
 ## [0.0.2] - 20250924
 
