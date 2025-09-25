@@ -13,3 +13,9 @@ uv run pytest tests/test_train_bpe.py
 uv run pytest tests/test_tokenizer.py
 ```
 
+## Milestone: Transformer LM
+
+```bash
+uv run pytest -k test_linear
+uv run pytest -k test_embedding
+```

@@ -1,9 +1,13 @@
 # Changelog
 
+## [0.0.3] - 20250925
+
+- [code] linear/embedding layer, pass `test_linear/test_embedding`
+
 ## [0.0.2] - 20250924
 
-- [code] tokenizer, pass the ``
-- [code] pre-tokenization + multiprocessing, pass the `train_bpe`
+- [code] tokenizer, pass the `tests/test_tokenizer.py`
+- [code] pre-tokenization + multiprocessing, pass the `tests/train_bpe.py`
 - [code] pre-tokenization, use `regex.split` and `regex.finditer` to handle special tokens and pre-tokenization, make it to ` 2.282496929168701 < 1.5`, but still too slow
 
 ### Record
