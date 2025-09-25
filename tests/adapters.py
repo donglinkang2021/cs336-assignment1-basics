@@ -90,9 +90,9 @@ def run_swiglu(
     from cs336_basics.model import SwiGLU
     swiglu = SwiGLU(d_model, d_ff)
     swiglu.load_state_dict({
-        "fc_1.weight": w1_weight,
-        "fc_2.weight": w2_weight,
-        "fc_3.weight": w3_weight,
+        "w1.weight": w1_weight,
+        "w2.weight": w2_weight,
+        "w3.weight": w3_weight,
     })
     return swiglu(in_features)
 
@@ -299,7 +299,11 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    from cs336_basics.model import TransformerBlock
+    block = TransformerBlock(d_model, num_heads, d_ff, max_seq_len, theta)
+    # modify the `attn` weight to `fc_qkv.weight` and `fc_out.weight`
+    block.load_state_dict(weights)
+    return block(in_features)
 
 
 def run_transformer_lm(
@@ -381,7 +385,18 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    from cs336_basics.model import TransformerLM
+    model = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+    )
+    model.load_state_dict(weights)
+    return model(in_indices)
 
 
 def run_rmsnorm(

@@ -112,14 +112,14 @@ class SwiGLU(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.d_ff = d_ff
-        self.fc_1 = Linear(in_features=d_model, out_features=d_ff)
-        self.fc_2 = Linear(in_features=d_ff, out_features=d_model)
-        self.fc_3 = Linear(in_features=d_model, out_features=d_ff)
+        self.w1 = Linear(in_features=d_model, out_features=d_ff)
+        self.w2 = Linear(in_features=d_ff, out_features=d_model)
+        self.w3 = Linear(in_features=d_model, out_features=d_ff)
     
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         # [..., d_model] -> [..., d_model]
-        x_1 = self.fc_1(x) # [..., d_model] -> [..., d_ff]
-        return self.fc_2(x_1 * torch.sigmoid(x_1) * self.fc_3(x))
+        x_1 = self.w1(x) # [..., d_model] -> [..., d_ff]
+        return self.w2(x_1 * torch.sigmoid(x_1) * self.w3(x))
 
 # uv run pytest -k test_rope
 class RotaryPositionalEmbedding(nn.Module):
@@ -210,7 +210,7 @@ class MultiheadSelfAttention(nn.Module):
 # uv run pytest -k test_multihead_self_attention
 # pass tests/test_model.py::test_multihead_self_attention_with_rope
 class MultiheadRoPESelfAttention(nn.Module):
-    """ Multi-head self-attention layer """
+    """ Multi-head self-attention layer with RoPE"""
     d_model: int
     num_heads: int
     
@@ -230,7 +230,7 @@ class MultiheadRoPESelfAttention(nn.Module):
         self.fc_out = Linear(d_model, d_model)
         self.rope = RotaryPositionalEmbedding(theta, self.head_dim, max_seq_len)
     
-    def forward(self, x:torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+    def forward(self, x:torch.Tensor, token_positions: torch.Tensor = None) -> torch.Tensor:
         # [batch, seq_len, d_model] -> [batch, seq_len, d_model]
         seq_len = x.size(1)
         qkv = self.fc_qkv(x)
@@ -243,3 +243,110 @@ class MultiheadRoPESelfAttention(nn.Module):
         xo = scaled_dot_product_attention(xq, xk, xv, mask)
         xo = rearrange(xo, 'B nH T Hs -> B T (nH Hs)')
         return self.fc_out(xo)
+
+from functools import lru_cache
+
+@lru_cache(1)
+def get_rope(theta: float, d_k: int, max_seq_len: int) -> RotaryPositionalEmbedding:
+    return RotaryPositionalEmbedding(theta, d_k, max_seq_len)
+
+class TransformerAttention(nn.Module):
+    """ Transformer Attention with RoPE for TransformerBlock """
+    d_model: int
+    num_heads: int
+    
+    def __init__(
+        self, 
+        d_model:int, 
+        num_heads:int,
+        max_seq_len:int,
+        theta:float,
+    ) -> None:
+        super().__init__()
+        assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.head_dim = d_model // num_heads
+        self.q_proj = Linear(d_model, d_model)
+        self.k_proj = Linear(d_model, d_model)
+        self.v_proj = Linear(d_model, d_model)
+        self.output_proj = Linear(d_model, d_model)
+        self.rope = get_rope(theta, self.head_dim, max_seq_len)
+    
+    def forward(self, x:torch.Tensor, token_positions: torch.Tensor = None) -> torch.Tensor:
+        # [batch, seq_len, d_model] -> [batch, seq_len, d_model]
+        seq_len = x.size(1)
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+        xq = rearrange(q, 'B T (nH Hs) -> B nH T Hs', Hs=self.head_dim)
+        xk = rearrange(k, 'B T (nH Hs) -> B nH T Hs', Hs=self.head_dim)
+        xv = rearrange(v, 'B T (nH Hs) -> B nH T Hs', Hs=self.head_dim)
+        xq = self.rope(xq, token_positions)
+        xk = self.rope(xk, token_positions)
+        mask = torch.ones((seq_len, seq_len), device=x.device).tril()
+        mask = rearrange(mask, 'T1 T2 -> 1 1 T1 T2')
+        xo = scaled_dot_product_attention(xq, xk, xv, mask)
+        xo = rearrange(xo, 'B nH T Hs -> B T (nH Hs)')
+        return self.output_proj(xo)
+
+
+# uv run pytest -k test_transformer_block
+class TransformerBlock(nn.Module):
+    """ Transformer Block """
+    def __init__(
+        self,
+        d_model:int,
+        num_heads:int,
+        d_ff:int,
+        max_seq_len:int,
+        theta:float,
+    ) -> None:
+        super().__init__()
+        self.attn = TransformerAttention(
+            d_model, num_heads, max_seq_len, theta
+        )
+        self.ffn = SwiGLU(d_model, d_ff)
+        self.ln1 = RMSNorm(d_model)
+        self.ln2 = RMSNorm(d_model)
+        
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        # [batch, seq_len, d_model] -> [batch, seq_len, d_model]
+        x = x + self.attn(self.ln1(x))
+        x = x + self.ffn(self.ln2(x))
+        return x
+
+# uv run pytest -k test_transformer_lm
+class TransformerLM(nn.Module):
+    """ Transformer Language Model """
+    def __init__(
+        self,
+        vocab_size:int,
+        context_length:int,
+        d_model:int,
+        num_layers:int,
+        num_heads:int,
+        d_ff:int,
+        rope_theta:float,
+    ) -> None:
+        super().__init__()
+        self.token_embeddings = Embedding(vocab_size, d_model)
+        self.layers = nn.ModuleList([
+            TransformerBlock(d_model, num_heads, d_ff, context_length, rope_theta)
+            for _ in range(num_layers)
+        ])
+        self.ln_final = RMSNorm(d_model)
+        self.lm_head = Linear(d_model, vocab_size)
+        self.max_seq_len = context_length
+        self.apply(init_weights)
+        
+    def forward(self, token_ids:torch.Tensor) -> torch.Tensor:
+        # [batch, seq_len] -> [batch, seq_len, vocab_size]
+        seq_len = token_ids.size(1)
+        assert seq_len <= self.max_seq_len, "Sequence length exceeds model capacity"
+        x = self.token_embeddings(token_ids)
+        for layer in self.layers:
+            x = layer(x)
+        x = self.ln_final(x)
+        logits = self.lm_head(x)
+        return logits

@@ -2,6 +2,8 @@
 
 ## [0.0.3] - 20250925
 
+- [code] transformer LM, pass `test_transformer_lm`
+- [code] transformer block, pass `test_transformer_block`
 - [code] softmax, scaled_dot_product_attention, multihead_self_attention, pass the test cases
 - [code] rope, pass `test_rope`
 - [code] swiglu FFN layer, pass `test_swiglu`
