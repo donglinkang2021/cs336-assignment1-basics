@@ -4,6 +4,7 @@ from typing import BinaryIO
 from multiprocessing import Pool
 from collections import defaultdict
 
+# uv run pytest tests/test_train_bpe.py
 def train_bpe(
     input_path: str,
     vocab_size: int,
