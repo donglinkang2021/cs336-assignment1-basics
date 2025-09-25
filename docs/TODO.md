@@ -33,3 +33,10 @@ uv run pytest -k test_multihead_self_attention
 uv run pytest -k test_transformer_block
 uv run pytest -k test_transformer_lm
 ```
+
+## Milestone: Train
+
+```bash
+uv run pytest -k test_cross_entropy
+uv run pytest -k test_adamw
+```
