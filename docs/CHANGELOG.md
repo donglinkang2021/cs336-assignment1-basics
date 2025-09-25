@@ -2,6 +2,7 @@
 
 ## [0.0.3] - 20250925
 
+- [code] cross entropy, pass `test_cross_entropy`
 - [code] pass all the test cases in `tests/test_model.py`
 - [code] transformer LM, pass `test_transformer_lm`
 - [code] transformer block, pass `test_transformer_block`
