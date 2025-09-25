@@ -18,4 +18,5 @@ uv run pytest tests/test_tokenizer.py
 ```bash
 uv run pytest -k test_linear
 uv run pytest -k test_embedding
+uv run pytest -k test_rmsnorm
 ```

@@ -2,6 +2,7 @@
 
 ## [0.0.3] - 20250925
 
+- [code] rmsnorm layer, pass `test_rmsnorm`
 - [code] linear/embedding layer, pass `test_linear/test_embedding`
 
 ## [0.0.2] - 20250924

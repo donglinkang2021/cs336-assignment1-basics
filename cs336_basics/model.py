@@ -10,6 +10,8 @@ def init_weights(m:nn.Module):
             nn.init.zeros_(m.bias)
     elif isinstance(m, Embedding):
         nn.init.trunc_normal_(m.weight, mean=0.0, std=1.0, a=-3.0, b=3.0)
+    elif isinstance(m, RMSNorm):
+        nn.init.ones_(m.weight)
 
 # uv run pytest -k test_linear
 class Linear(nn.Module):
@@ -69,3 +71,33 @@ class Embedding(nn.Module):
     def forward(self, token_ids:torch.Tensor) -> torch.Tensor:
         # [...] -> [..., embedding_dim]
         return self.weight[token_ids]
+
+# uv run pytest -k test_rmsnorm
+class RMSNorm(nn.Module):
+    """
+    Root Mean Square Layer Normalization (RMSNorm)
+    Reference https://github.com/donglinkang2021/normalize-layers-pytorch/
+    """
+    d_model: int
+    eps: float
+    weight: torch.Tensor
+    
+    def __init__(
+        self, 
+        d_model: int, 
+        eps: float = 1e-5, 
+        device=None, 
+        dtype=None
+    ) -> None:
+        kwargs = {'device': device, 'dtype': dtype}
+        super().__init__()
+        self.weight = nn.Parameter(torch.empty(d_model, **kwargs))
+        self.eps = eps
+
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        # [..., d_model] -> [..., d_model]
+        in_dtype = x.dtype
+        x = x.to(torch.float32)
+        var = x.pow(2).mean(dim=-1, keepdim=True) + self.eps
+        x_out = x * var.rsqrt() * self.weight
+        return x_out.to(in_dtype)
