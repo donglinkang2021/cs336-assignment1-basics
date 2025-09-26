@@ -1,5 +1,7 @@
 # Changelog
 
+- [code] data loader, pass `test_get_batch`
+
 ## [0.0.3] - 20250925
 
 - [handout] 35/50
