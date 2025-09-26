@@ -1,7 +1,7 @@
 import os
 import regex as re
 from typing import BinaryIO
-from multiprocessing import Pool
+from multiprocessing import Pool, get_context
 from collections import defaultdict
 
 # uv run pytest tests/test_train_bpe.py
@@ -25,7 +25,7 @@ def train_bpe(
             chunk = f.read(end - start).decode("utf-8", errors="ignore")
             chunk_list.append(chunk)
     task_args = [(chunk, special_tokens, False) for chunk in chunk_list]
-    with Pool(processes=num_processes) as pool:
+    with get_context("forkserver").Pool(processes=num_processes) as pool:
         chunk_results = pool.map(process_chunk, task_args)
     
     # 3. Compute BPE merges
