@@ -19,12 +19,12 @@ def train_bpe(
     # 2. Pre-tokenization
     with open(input_path, "rb") as f:
         boundaries = find_chunk_boundaries(f, num_processes, "<|endoftext|>".encode("utf-8"))
-        chunk_list = []
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            f.seek(start)
-            chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            chunk_list.append(chunk)
-    task_args = [(chunk, special_tokens, False) for chunk in chunk_list]
+    
+    task_args = [
+        (input_path, start, end, special_tokens) 
+        for start, end in zip(boundaries[:-1], boundaries[1:])
+    ]
+    
     with get_context("forkserver").Pool(processes=num_processes) as pool:
         chunk_results = pool.map(process_chunk, task_args)
     
@@ -176,23 +176,24 @@ def find_chunk_boundaries(
     return sorted(set(chunk_boundaries))
 
 
-def process_chunk(args: tuple[str, list[str], bool]) -> list[list[bytes]]:
-    chunk, special_tokens, keep_special_tokens = args
-    pattern = "|".join(re.escape(tok) for tok in special_tokens)
-    if keep_special_tokens and pattern:
-        pattern = f"({pattern})"
-    segments = re.split(pattern, chunk) if pattern else [chunk]
+def process_chunk(args: tuple[str, int, int, list[str]]) -> list[list[bytes]]:
+    input_path, start, end, special_tokens = args
+    with open(input_path, "rb") as file:
+        file.seek(start)
+        chunk = file.read(end - start).decode("utf-8", errors="ignore")
 
+    # 1. Remove special tokens by splitting the chunk at those tokens
+    pattern = "|".join(re.escape(tok) for tok in special_tokens)
+    documents = re.split(pattern, chunk)
+
+    # 2. Pre-tokenize and count byte pair frequencies
     pre_tokens_bytes: list[list[bytes]] = []
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-
-    for segment in segments:
-        if keep_special_tokens and segment in special_tokens:
-            token_bytes = [segment.encode("utf-8")]
+    for doc in documents:
+        tokens = [match.group(0).encode("utf-8") for match in re.finditer(PAT, doc)]
+        for token in tokens:
+            token_bytes = [bytes([b]) for b in token]
             pre_tokens_bytes.append(token_bytes)
-        else:
-            tokens = [match.group(0).encode("utf-8") for match in re.finditer(PAT, segment)]
-            for token in tokens:
-                token_bytes = [bytes([b]) for b in token]
-                pre_tokens_bytes.append(token_bytes)
+
     return pre_tokens_bytes
+

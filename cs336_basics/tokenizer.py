@@ -1,4 +1,40 @@
-from .bpe import process_chunk, _merge_pair
+import regex as re
+
+def process_chunk(args: tuple[str, list[str], bool]) -> list[list[bytes]]:
+    chunk, special_tokens, keep_special_tokens = args
+    pattern = "|".join(re.escape(tok) for tok in special_tokens)
+    if keep_special_tokens and pattern:
+        pattern = f"({pattern})"
+    segments = re.split(pattern, chunk) if pattern else [chunk]
+
+    pre_tokens_bytes: list[list[bytes]] = []
+    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+
+    for segment in segments:
+        if keep_special_tokens and segment in special_tokens:
+            token_bytes = [segment.encode("utf-8")]
+            pre_tokens_bytes.append(token_bytes)
+        else:
+            tokens = [match.group(0).encode("utf-8") for match in re.finditer(PAT, segment)]
+            for token in tokens:
+                token_bytes = [bytes([b]) for b in token]
+                pre_tokens_bytes.append(token_bytes)
+    return pre_tokens_bytes
+
+def _merge_pair(
+    token_bytes: list[bytes], pair: tuple[bytes, bytes], new_token: bytes
+) -> list[bytes]:
+    """Merges a pair of bytes into a new token within a list of bytes."""
+    new_token_bytes = []
+    i = 0
+    while i < len(token_bytes):
+        if i < len(token_bytes) - 1 and (token_bytes[i], token_bytes[i+1]) == pair:
+            new_token_bytes.append(new_token)
+            i += 2
+        else:
+            new_token_bytes.append(token_bytes[i])
+            i += 1
+    return new_token_bytes
 
 # uv run pytest tests/test_tokenizer.py
 class Tokenizer:
