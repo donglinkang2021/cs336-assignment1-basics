@@ -21,10 +21,12 @@ dependencies = [
     "ty>=0.0.1a16",
     "hydra-core>=1.3.2",
     "pandas>=2.3.2",
-    "swanlab>=0.6.10",
     "hydra-colorlog>=1.2.0",
     "tensorboard>=2.20.0",
     "nvidia-ml-py>=13.580.82",
+    "nvitop>=1.5.3",
+    "memory-profiler>=0.61.0",
+    "debugpy>=1.8.17",
 ]
 
 [build-system]
