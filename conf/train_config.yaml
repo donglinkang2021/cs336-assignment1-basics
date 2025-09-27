@@ -1,0 +1,8 @@
+defaults:
+  - hydra: default
+  - data: default
+  - model: default
+  - optimizer: default
+  - training: default
+  - logger: wandb  # You can change this to tensorboard or swanlab
+  - _self_

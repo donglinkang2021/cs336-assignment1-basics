@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.0.5] - 20250927
+
+- [code] add training script, integrating with logger, add the default config, need tokenizer to tokenize the txt before
+
 ## [0.0.4] - 20250926
 
 - [code] pass all the tests, pass `uv run pytest`, fix all the warnings
