@@ -37,19 +37,17 @@ def train_bpe(
     # Get all pairs from the pre-tokenized bytes
     pair_to_indices, counts = _get_pair_counts(pre_tokens_bytes)
 
-    idx = len(vocab)
-    while idx < vocab_size:
+    num_merges = vocab_size - len(vocab)
+
+    for _ in range(num_merges):
         if not counts:
             break
         
         # Find the most frequent pair
         max_pair = max(counts, key=lambda p: (counts[p], p))
-
         merges.append(max_pair)
-        a, b = max_pair
-        new_token = a + b
-        vocab[idx] = new_token
-        idx += 1
+        new_token = max_pair[0] + max_pair[1]
+        vocab[len(vocab)] = new_token
 
         # Merge the most frequent pair in all affected tokens
         # Use affected_indices to only update tokens that contain the max_pair
