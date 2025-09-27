@@ -3,8 +3,6 @@ from datetime import datetime
 from pathlib import Path
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
-import swanlab
-import wandb
 from torch.utils.tensorboard.writer import SummaryWriter
 
 class Logger:
@@ -20,6 +18,7 @@ class Logger:
         config_dict = OmegaConf.to_container(config, resolve=True)
 
         if self.logger_type == "swanlab":
+            import swanlab
             swanlab.init(
                 project=config.logger.project_name,
                 name=config.logger.run_name,
@@ -28,6 +27,7 @@ class Logger:
             )
             self.writer = swanlab
         elif self.logger_type == "wandb":
+            import wandb
             wandb.init(
                 project=config.logger.project_name,
                 name=config.logger.run_name,
@@ -58,9 +58,9 @@ class Logger:
             return
         if self.logger_type == "wandb":
             # wandb can directly record HTML
-            wandb.log({key: wandb.Html(text)}, step=step)
+            self.writer.log({key: self.writer.Html(text)}, step=step)
         elif self.logger_type == "swanlab":
-            swanlab.log({key: swanlab.Text(text)}, step=step)
+            self.writer.log({key: self.writer.Text(text)}, step=step)
         elif self.logger_type == "tensorboard":
             # TensorBoard treats text as markdown
             escaped_text = html.escape(text)
@@ -68,14 +68,14 @@ class Logger:
 
     def log_table(self, key: str, table: dict):
         if self.logger_type == "wandb":
-            wandb.log({key: wandb.Table(dataframe=pd.DataFrame(table))})
+            self.writer.log({key: self.writer.Table(dataframe=pd.DataFrame(table))})
         elif self.logger_type == "swanlab":
-            etable = swanlab.echarts.Table()
+            etable = self.writer.echarts.Table()
             etable.add(
                 list(table.keys()),
                 [list(row) for row in zip(*table.values())]  # Transpose the table for swanlab
             )
-            swanlab.log({"completions": etable})
+            self.writer.log({"completions": etable})
         elif self.logger_type == "tensorboard":
             # TensorBoard does not support direct table logging, so we convert to text
             table_str = pd.DataFrame(table).to_html(index=False)
