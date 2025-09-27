@@ -4,6 +4,9 @@ from typing import BinaryIO
 from multiprocessing import Pool, get_context
 from collections import defaultdict
 
+GPT2_PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+_COMPILED_PAT = re.compile(GPT2_PAT)
+
 def get_stats(
     token_ids:list[int], 
     counts=None
@@ -92,50 +95,29 @@ def find_chunk_boundaries(
     desired_num_chunks: int, 
     split_special_token: bytes
 ) -> list[int]:
-    """
-    Chunk the file into parts that can be counted independently.
-    May return fewer chunks if the boundaries end up overlapping.
-    """
-    assert isinstance(split_special_token, bytes), (
+    assert isinstance(split_special_token, bytes), \
         "Must represent special token as a bytestring"
-    )
-
-    # Get total file size in bytes
     file.seek(0, os.SEEK_END)
     file_size = file.tell()
     file.seek(0)
-
-    chunk_size = file_size // desired_num_chunks
-
-    # Initial guesses for chunk boundary locations, uniformly spaced
-    # Chunks start on previous index, don't include last index
-    chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
-    chunk_boundaries[-1] = file_size
-
-    mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
-
-    for bi in range(1, len(chunk_boundaries) - 1):
-        initial_position = chunk_boundaries[bi]
-        file.seek(initial_position)  # Start at boundary guess
+    chunk_size = max(1, file_size // desired_num_chunks)
+    bounds = [i * chunk_size for i in range(desired_num_chunks + 1)]
+    bounds[-1] = file_size
+    mini = 4096  # 4k scan step (bigger save syscall)
+    for bi in range(1, len(bounds) - 1):
+        pos = bounds[bi]
+        file.seek(pos)
         while True:
-            mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
-
-            # If EOF, this boundary should be at the end of the file
-            if mini_chunk == b"":
-                chunk_boundaries[bi] = file_size
+            buf = file.read(mini)
+            if not buf:
+                bounds[bi] = file_size
                 break
-
-            # Find the special token in the mini chunk
-            found_at = mini_chunk.find(split_special_token)
-            if found_at != -1:
-                true_position = initial_position + found_at
-                chunk_boundaries[bi] = true_position
+            found = buf.find(split_special_token)
+            if found != -1:
+                bounds[bi] = pos + found
                 break
-
-            initial_position += mini_chunk_size
-
-    # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
-    return sorted(set(chunk_boundaries))
+            pos += len(buf)
+    return sorted(set(bounds))
 
 
 def process_chunk(args: tuple[str, int, int, list[str]]) -> list[list[int]]:
@@ -143,16 +125,13 @@ def process_chunk(args: tuple[str, int, int, list[str]]) -> list[list[int]]:
     with open(input_path, "rb") as file:
         file.seek(start)
         chunk = file.read(end - start).decode("utf-8", errors="ignore")
-
     # 1. Remove special tokens by splitting the chunk at those tokens
     pattern = "|".join(re.escape(tok) for tok in special_tokens)
     documents = re.split(pattern, chunk)
-
     # 2. Pre-tokenize and count byte pair frequencies
     chunk_ids: list[list[int]] = []
-    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     for doc in documents:
-        tokens = [match.group(0).encode("utf-8") for match in re.finditer(PAT, doc)]
-        chunk_ids.extend([list(token) for token in tokens])
+        tokens = [match.group(0).encode("utf-8") for match in _COMPILED_PAT.finditer(doc)]
+        chunk_ids.extend([list(token) for token in tokens]) # list(bytes) -> list[int]
     return chunk_ids
 
