@@ -7,36 +7,6 @@ from collections import defaultdict
 GPT2_PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 _COMPILED_PAT = re.compile(GPT2_PAT)
 
-def get_stats(
-    token_ids:list[int], 
-    counts=None
-) -> dict[tuple[int, int], int]:
-    """[1, 2, 3, 1, 2] -> {(1, 2): 2, (2, 3): 1, (3, 1): 1}"""
-    counts = defaultdict(int) if counts is None else counts
-    for pair in zip(token_ids, token_ids[1:]): # iterate consecutive elements
-        counts[pair] = counts.get(pair, 0) + 1
-    return counts
-
-def merge(
-    token_ids: list[int],
-    pair: tuple[int, int],
-    new_id: int
-) -> list[int]:
-    """Example: token_ids=[1, 2, 3, 1, 2], pair=(1, 2), new_id=4 -> [4, 3, 4]"""
-    newids = []
-    i = 0
-    while i < len(token_ids):
-        # if not at the very last position AND the pair matches, replace it
-        if token_ids[i] == pair[0] \
-            and i < len(token_ids) - 1 \
-                and token_ids[i+1] == pair[1]:
-            newids.append(new_id)
-            i += 2
-        else:
-            newids.append(token_ids[i])
-            i += 1
-    return newids
-
 # uv run pytest tests/test_train_bpe.py
 def train_bpe(
     input_path: str,
@@ -51,30 +21,29 @@ def train_bpe(
 
     # 2. Pre-tokenization
     with open(input_path, "rb") as f:
-        boundaries = find_chunk_boundaries(f, num_processes, "<|endoftext|>".encode("utf-8"))
-    
+        bounds = find_chunk_boundaries(f, num_processes, "<|endoftext|>".encode("utf-8"))
     task_args = [
-        (input_path, start, end, special_tokens) 
-        for start, end in zip(boundaries[:-1], boundaries[1:])
+        (input_path, start, end, special_tokens)
+        for start, end in zip(bounds[:-1], bounds[1:])
     ]
-    
     with get_context("forkserver").Pool(processes=num_processes) as pool:
         chunk_results = pool.map(process_chunk, task_args) # list[list[list[int]]]
     
     # 3. Compute BPE merges
     ids: list[list[int]] = [
         token_ids for chunk_ids in chunk_results for token_ids in chunk_ids
-    ] # list[token_ids], each token_ids is list[int]
+    ] # chunk_ids is list[token_ids], token_ids is list[int]
     merges: list[tuple[int, int]] = []
     
-    num_merges = vocab_size - len(vocab)
+    # Get all pairs from the pre-tokenized bytes
+    pair_to_indices, counts = _get_pair_counts(ids)
 
+    num_merges = vocab_size - len(vocab)
     for i in range(num_merges):
-        counts = defaultdict(int) # (int, int) -> int : pair -> frequency
-        for token_ids in ids:
-            get_stats(token_ids, counts)
+        if not counts:
+            break
+        
         # Find the most frequent pair
-        # Example: {(0, 1): 2, (1, 2): 3, (2, 2): 3, (2, 1): 3} -> (2, 2)
         def rank(pair: tuple[int, int]) -> tuple[int, tuple[bytes, bytes]]:
             return counts[pair], (vocab[pair[0]], vocab[pair[1]])
         max_pair = max(counts, key=rank)
@@ -82,13 +51,66 @@ def train_bpe(
         new_id = len(vocab)
         vocab[new_id] = new_token
         merges.append(max_pair)
-        # Replace all occurrences of max_pair in ids with new_id
-        ids = [merge(token_ids, max_pair, new_id) for token_ids in ids]
-    
-    # 4. Convert merges from (int, int) to (bytes, bytes)
+
+        # Merge the most frequent pair in all affected tokens
+        # Use affected_indices to only update tokens that contain the max_pair
+        affected_indices = pair_to_indices[max_pair].copy()
+        for j in affected_indices:
+            token_ids = ids[j]
+            if len(token_ids) < 2:
+                continue
+            # 1. Decrement counts for pairs in the old token
+            # just ignore all the pair count in the old token right now
+            for pair in zip(token_ids, token_ids[1:]):
+                counts[pair] -= 1
+                pair_to_indices[pair].discard(j)
+                if counts[pair] == 0:
+                    del counts[pair]
+                    del pair_to_indices[pair]
+
+            # 2. Merge the pair to create the new token
+            new_token_ids = _merge_pair(token_ids, max_pair, new_id)
+
+            # 3. Increment counts for pairs in the new token
+            # add all the pair count in the new token
+            for pair in zip(new_token_ids, new_token_ids[1:]):
+                counts[pair] += 1
+                pair_to_indices[pair].add(j)
+
+            ids[j] = new_token_ids
+
     merges = [(vocab[a], vocab[b]) for a, b in merges]
-    
     return vocab, merges
+
+def _get_pair_counts(
+        ids: list[list[int]]
+    ) -> tuple[
+        defaultdict[tuple[int, int], set], 
+        defaultdict[tuple[int, int], int]
+    ]:
+    """Counts initial byte pair frequencies."""
+    pair_to_indices = defaultdict(set)
+    counts = defaultdict(int)
+    for i, token_ids in enumerate(ids):
+        for pair in zip(token_ids, token_ids[1:]):
+            pair_to_indices[pair].add(i)
+            counts[pair] += 1
+    return pair_to_indices, counts
+
+def _merge_pair(
+    token_ids: list[int], pair: tuple[int, int], new_id: int
+) -> list[int]:
+    """Merges a pair of bytes into a new token within a list of bytes."""
+    new_token_ids = []
+    i = 0
+    while i < len(token_ids):
+        if i < len(token_ids) - 1 and (token_ids[i], token_ids[i+1]) == pair:
+            new_token_ids.append(new_id)
+            i += 2
+        else:
+            new_token_ids.append(token_ids[i])
+            i += 1
+    return new_token_ids
 
 def find_chunk_boundaries(
     file: BinaryIO, 
@@ -134,4 +156,3 @@ def process_chunk(args: tuple[str, int, int, list[str]]) -> list[list[int]]:
         tokens = [match.group(0).encode("utf-8") for match in _COMPILED_PAT.finditer(doc)]
         chunk_ids.extend([list(token) for token in tokens]) # list(bytes) -> list[int]
     return chunk_ids
-
