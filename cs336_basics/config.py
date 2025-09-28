@@ -16,8 +16,8 @@ class ModelConfig:
     vocab_size: int = 10000
     context_length: int = 256
     d_model: int = 512
-    num_layers: int = 6
-    num_heads: int = 6
+    num_layers: int = 4
+    num_heads: int = 16
     d_ff: int = 1344  # From model/default.yaml
     rope_theta: float = 10000.0
 
@@ -34,7 +34,7 @@ class TrainingConfig:
     """Training loop configuration."""
     seed: int = 1337
     device: str = "cuda" # "cuda" or "cpu"
-    batch_size: int = 64
+    batch_size: int = 256
     max_iters: int = 5000
     log_interval: int = 10
     eval_interval: int = 500
