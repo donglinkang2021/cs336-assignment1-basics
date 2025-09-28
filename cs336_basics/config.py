@@ -7,7 +7,8 @@ from typing import Any, Optional
 @dataclass
 class DataConfig:
     """Data configuration."""
-    path: str = "data"
+    path: str = "data/tinystories"
+    tokenizer_path: str = "hf_tokenizer/tinystories/tokenizer.json"
 
 @dataclass
 class ModelConfig:

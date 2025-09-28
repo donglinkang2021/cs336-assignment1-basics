@@ -1,7 +1,6 @@
 import regex as re
 
-def process_chunk(args: tuple[str, list[str], bool]) -> list[list[bytes]]:
-    chunk, special_tokens, keep_special_tokens = args
+def process_chunk(chunk:str, special_tokens:list[str], keep_special_tokens:bool) -> list[list[bytes]]:
     pattern = "|".join(re.escape(tok) for tok in special_tokens)
     if keep_special_tokens and pattern:
         pattern = f"({pattern})"

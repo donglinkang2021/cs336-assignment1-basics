@@ -6,12 +6,15 @@ import numpy as np
 import torch
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
+from tqdm import tqdm
+from tokenizers import Tokenizer
 
 from cs336_basics.data import get_batch
 from cs336_basics.model import TransformerLM
 from cs336_basics.nn_utils import cross_entropy, gradient_clipping, compute_entropy_chunked
 from cs336_basics.optimizer import AdamW, get_lr_cosine_schedule
 from cs336_basics.checkpoint import load_checkpoint, save_checkpoint
+from cs336_basics.generate import generate
 from cs336_basics.logger import Logger
 from cs336_basics.config import TrainConfig
 
@@ -23,15 +26,17 @@ def evaluate(model:TransformerLM, data, cfg: TrainConfig, device):
     model.eval()
     losses = []
     entropies = []
-    for k in range(cfg.training.eval_iters):
+    for k in tqdm(range(cfg.training.eval_iters), desc="Evaluating", leave=False):
         x, y = get_batch(data, cfg.training.batch_size, cfg.model.context_length, device)
         logits = model(x)
         loss = cross_entropy(logits, y)
         losses.append(loss.item())
         entropies.append(compute_entropy_chunked(logits).mean().item())
     model.train()
+    mean_loss = np.mean(losses)
     return {
-        'val/loss': np.mean(losses),
+        'val/loss': mean_loss,
+        'val/ppl': np.exp(mean_loss),
         'val/entropy': np.mean(entropies)
     }
 
@@ -84,7 +89,7 @@ def main(cfg: TrainConfig) -> None:
     # --- Training Loop ---
     print("Starting training...")
     start_time = time.time()
-    for it in range(start_iter, cfg.training.max_iters):
+    for it in tqdm(range(start_iter, cfg.training.max_iters), desc="Training"):
         # Learning rate schedule
         lr = get_lr_cosine_schedule(it, cfg.optimizer.max_lr, cfg.optimizer.min_lr, cfg.optimizer.warmup_iters, cfg.training.max_iters)
         for param_group in optimizer.param_groups:
@@ -110,9 +115,10 @@ def main(cfg: TrainConfig) -> None:
         if it % cfg.training.log_interval == 0 or it == cfg.training.max_iters - 1:
             duration = time.time() - start_time
             ent = compute_entropy_chunked(logits).mean()
-            print(f"Iter {it}: Train loss={loss.item():.4f}, LR={lr:.6f}, Time={duration:.2f}s")
+            tqdm.write(f"Iter {it}: Train loss={loss.item():.4f}, LR={lr:.6f}, Time={duration:.2f}s")
             logger.log_metrics({
                 'train/loss': loss.item(), 
+                'train/ppl': loss.exp().item(),
                 'train/lr': lr,
                 'train/entropy': ent.item(),
                 'train/grad_norm': grad_norm
@@ -121,14 +127,26 @@ def main(cfg: TrainConfig) -> None:
         # --- Evaluation and Checkpointing ---
         if it > 0 and (it % cfg.training.eval_interval == 0 or it == cfg.training.max_iters - 1):
             metrics = evaluate(model, val_data, cfg, device)
-            print(f"Iter {it}: Val loss={metrics['val/loss']:.4f}")
+            tqdm.write(f"Iter {it}: Val loss={metrics['val/loss']:.4f}")
             logger.log_metrics(metrics, step=it)
             
             checkpoint_path = output_dir / f'ckpt_{it}.pt'
-            print(f"Saving checkpoint to {checkpoint_path}")
+            tqdm.write(f"Saving checkpoint to {checkpoint_path}")
             save_checkpoint(model, optimizer, it, checkpoint_path)
     
-    print("Training finished.")
+    tqdm.write("Training finished.")
+    
+    # --- Generation ---
+    tokenizer_path = cfg.data.tokenizer_path
+    tokenizer = Tokenizer.from_file(tokenizer_path)
+    context = torch.zeros((1, 1), dtype=torch.long, device=cfg.training.device)
+    # Pass model config block_size
+    generated_output = tokenizer.decode(
+        generate(model, context, max_new_tokens=256, block_size=cfg.training.block_size)[0].tolist())
+    tqdm.write("\n--- Generated Text ---")
+    tqdm.write(generated_output)
+    # Log generated text
+    logger.log_text("Generated Text", generated_output, step=cfg.training.max_iters)
     logger.close()
     OmegaConf.save(cfg, output_dir / 'config.yaml')
 

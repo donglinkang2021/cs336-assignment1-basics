@@ -1,1 +1,2 @@
-path: 'data' # Directory containing train.bin and val.bin
+path: data/tinystories # Directory containing train.bin and val.bin
+tokenizer_path: hf_tokenizer/tinystories/tokenizer.json

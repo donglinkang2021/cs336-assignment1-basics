@@ -27,6 +27,8 @@ dependencies = [
     "nvitop>=1.5.3",
     "memory-profiler>=0.61.0",
     "debugpy>=1.8.17",
+    "pybind11>=3.0.1",
+    "tokenizers>=0.22.1",
 ]
 
 [build-system]
