@@ -93,7 +93,7 @@ class Tokenizer:
         """
         token_ids = []
         # 1. Pre-tokenize the input text into chunks, handling special tokens.
-        pre_tokens_list = process_chunk((text, self.special_tokens, True))
+        pre_tokens_list = process_chunk(text, self.special_tokens, True)
 
         for tokens in pre_tokens_list:
             # If the chunk is a special token, directly look up its ID.
