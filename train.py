@@ -139,10 +139,18 @@ def main(cfg: TrainConfig) -> None:
     # --- Generation ---
     tokenizer_path = cfg.data.tokenizer_path
     tokenizer = Tokenizer.from_file(tokenizer_path)
-    context = torch.zeros((1, 1), dtype=torch.long, device=cfg.training.device)
-    # Pass model config block_size
+    context = torch.zeros((1, 1), dtype=torch.long, device=device)
+    print("Beginning generation...")
     generated_output = tokenizer.decode(
-        generate(model, context, max_new_tokens=256, block_size=cfg.training.block_size)[0].tolist())
+        generate(
+            model, 
+            context, 
+            max_new_tokens=1000, 
+            block_size=cfg.model.context_length,
+            temperature=0.6,
+            top_p=0.95
+        )[0].tolist()
+    )    
     tqdm.write("\n--- Generated Text ---")
     tqdm.write(generated_output)
     # Log generated text
