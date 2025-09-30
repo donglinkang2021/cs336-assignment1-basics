@@ -26,6 +26,11 @@ print(f"Loaded model from {ckpt_path}")
 total_params = sum(p.numel() for p in model.parameters())
 print(f"Total number of parameters: {total_params/1e6:.2f}M")
 
+for n, p in model.named_parameters():
+    if p.requires_grad:
+        print(n, p.data.dtype, p.device)
+
+
 model.eval()
 tokenizer = Tokenizer.from_file(cfg.data.tokenizer_path)
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
