@@ -67,15 +67,7 @@ def main(cfg: TrainConfig) -> None:
     print(f"Train data size: {len(train_data)}, Val data size: {len(val_data)}")
 
     # --- Model and Optimizer ---
-    model = TransformerLM(
-        vocab_size=cfg.model.vocab_size,
-        context_length=cfg.model.context_length,
-        d_model=cfg.model.d_model,
-        num_layers=cfg.model.num_layers,
-        num_heads=cfg.model.num_heads,
-        d_ff=cfg.model.d_ff,
-        rope_theta=cfg.model.rope_theta,
-    ).to(device)
+    model = TransformerLM(**cfg.model).to(device)
     
     optimizer = AdamW(model.parameters(), lr=cfg.optimizer.max_lr)
     

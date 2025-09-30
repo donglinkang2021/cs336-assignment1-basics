@@ -20,6 +20,11 @@ class ModelConfig:
     num_heads: int = 16
     d_ff: int = 1344  # From model/default.yaml
     rope_theta: float = 10000.0
+    # Ablation study parameters
+    ffn_type: str = 'swiglu' # 'swiglu' or 'silu'
+    use_post_norm: bool = False
+    remove_rmsnorm: bool = False
+    remove_rope: bool = False
 
 @dataclass
 class OptimizerConfig:

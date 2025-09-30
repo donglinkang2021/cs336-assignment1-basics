@@ -115,6 +115,8 @@ class SwiGLU(nn.Module):
     def __init__(self, d_model:int, d_ff:int) -> None:
         super().__init__()
         self.d_model = d_model
+        # should be roughly d_ff = 8/3 * d_model, 
+        # then the parameter count = 3 * d_model * 8/3 * d_model = 8 * d_model^2
         self.d_ff = d_ff
         self.w1 = Linear(in_features=d_model, out_features=d_ff)
         self.w2 = Linear(in_features=d_ff, out_features=d_model)
@@ -123,6 +125,24 @@ class SwiGLU(nn.Module):
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         # [..., d_model] -> [..., d_model]
         return self.w2(silu(self.w1(x)) * self.w3(x))
+
+class SiLUFFN(nn.Module):
+    """ FFN with SiLU activation """
+    d_model: int
+    d_ff: int
+
+    def __init__(self, d_model:int, d_ff:int) -> None:
+        super().__init__()
+        self.d_model = d_model
+        # should be d_ff = 4 * d_model, 
+        # then the parameter count = 2 * d_model * 4 * d_model = 8 * d_model^2
+        self.d_ff = d_ff
+        self.w1 = Linear(in_features=d_model, out_features=d_ff)
+        self.w2 = Linear(in_features=d_ff, out_features=d_model)
+
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        # [..., d_model] -> [..., d_model]
+        return self.w2(silu(self.w1(x)))
 
 # uv run pytest -k test_rope
 class RotaryPositionalEmbedding(nn.Module):
@@ -285,8 +305,9 @@ class TransformerAttention(nn.Module):
         xq = rearrange(q, 'B T (nH Hs) -> B nH T Hs', Hs=self.head_dim)
         xk = rearrange(k, 'B T (nH Hs) -> B nH T Hs', Hs=self.head_dim)
         xv = rearrange(v, 'B T (nH Hs) -> B nH T Hs', Hs=self.head_dim)
-        xq = self.rope(xq, token_positions)
-        xk = self.rope(xk, token_positions)
+        if self.rope is not None:
+            xq = self.rope(xq, token_positions)
+            xk = self.rope(xk, token_positions)
         mask = torch.ones((seq_len, seq_len), device=x.device).tril()
         mask = rearrange(mask, 'T1 T2 -> 1 1 T1 T2')
         xo = scaled_dot_product_attention(xq, xk, xv, mask)
@@ -304,19 +325,41 @@ class TransformerBlock(nn.Module):
         d_ff:int,
         max_seq_len:int,
         theta:float,
+        ffn_type:str = 'swiglu',
+        use_post_norm:bool = False,
+        remove_rmsnorm:bool = False,
+        remove_rope:bool = False,
     ) -> None:
         super().__init__()
         self.attn = TransformerAttention(
             d_model, num_heads, max_seq_len, theta
         )
-        self.ffn = SwiGLU(d_model, d_ff)
-        self.ln1 = RMSNorm(d_model)
-        self.ln2 = RMSNorm(d_model)
+        if remove_rope:
+            self.attn.rope = None
+
+        if ffn_type == 'swiglu':
+            self.ffn = SwiGLU(d_model, d_ff)
+        elif ffn_type == 'silu':
+            self.ffn = SiLUFFN(d_model, d_ff)
+        else:
+            raise ValueError(f"Unknown ffn_type: {ffn_type}")
+
+        self.use_post_norm = use_post_norm
+        if remove_rmsnorm:
+            self.ln1 = nn.Identity()
+            self.ln2 = nn.Identity()
+        else:
+            self.ln1 = RMSNorm(d_model)
+            self.ln2 = RMSNorm(d_model)
         
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         # [batch, seq_len, d_model] -> [batch, seq_len, d_model]
-        x = x + self.attn(self.ln1(x))
-        x = x + self.ffn(self.ln2(x))
+        if self.use_post_norm:
+            x = self.ln1(x + self.attn(x))
+            x = self.ln2(x + self.ffn(x))
+        else:
+            x = x + self.attn(self.ln1(x))
+            x = x + self.ffn(self.ln2(x))
         return x
 
 # uv run pytest -k test_transformer_lm
@@ -331,14 +374,27 @@ class TransformerLM(nn.Module):
         num_heads:int,
         d_ff:int,
         rope_theta:float,
+        ffn_type:str = 'swiglu',
+        use_post_norm:bool = False,
+        remove_rmsnorm:bool = False,
+        remove_rope:bool = False,
     ) -> None:
         super().__init__()
         self.token_embeddings = Embedding(vocab_size, d_model)
         self.layers = nn.ModuleList([
-            TransformerBlock(d_model, num_heads, d_ff, context_length, rope_theta)
+            TransformerBlock(
+                d_model, num_heads, d_ff, context_length, rope_theta,
+                ffn_type=ffn_type,
+                use_post_norm=use_post_norm,
+                remove_rmsnorm=remove_rmsnorm,
+                remove_rope=remove_rope,
+            )
             for _ in range(num_layers)
         ])
-        self.ln_final = RMSNorm(d_model)
+        if remove_rmsnorm:
+            self.ln_final = nn.Identity()
+        else:
+            self.ln_final = RMSNorm(d_model)
         self.lm_head = Linear(d_model, vocab_size)
         self.max_seq_len = context_length
         self.apply(init_weights)
