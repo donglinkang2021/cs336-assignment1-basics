@@ -38,7 +38,7 @@ class OptimizerConfig:
 class TrainingConfig:
     """Training loop configuration."""
     seed: int = 1337
-    device: str = "cuda" # "cuda" or "cpu"
+    is_compile: bool = False # torch.compile the model or not
     batch_size: int = 256
     max_iters: int = 5000
     log_interval: int = 10

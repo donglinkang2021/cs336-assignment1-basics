@@ -68,6 +68,8 @@ def main(cfg: TrainConfig) -> None:
 
     # --- Model and Optimizer ---
     model = TransformerLM(**cfg.model).to(device)
+    if cfg.training.is_compile :
+        model = torch.compile(model)
     
     optimizer = AdamW(model.parameters(), lr=cfg.optimizer.max_lr)
     
