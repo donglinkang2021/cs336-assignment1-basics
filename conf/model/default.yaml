@@ -3,5 +3,9 @@ context_length: 256
 d_model: 512
 num_layers: 4
 num_heads: 16
-d_ff: 1344 # 8/3 * d_model
+d_ff: 1344 # 8/3 * d_model for swiglu; 4 * d_model for silu
 rope_theta: 10000
+ffn_type: 'swiglu'
+use_post_norm: false
+remove_rmsnorm: false
+remove_rope: false
