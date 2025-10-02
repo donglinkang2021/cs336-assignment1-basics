@@ -16,7 +16,7 @@ from cs336_basics.optimizer import AdamW, Muon, get_lr_cosine_schedule
 from cs336_basics.checkpoint import load_checkpoint, save_checkpoint
 from cs336_basics.generate import generate
 from cs336_basics.logger import Logger
-from cs336_basics.config import TrainConfig
+from cs336_basics.config_muon import TrainConfig
 
 @torch.no_grad()
 def evaluate(model:TransformerLM, data, cfg: TrainConfig, device):
@@ -41,7 +41,7 @@ def evaluate(model:TransformerLM, data, cfg: TrainConfig, device):
     }
 
 
-@hydra.main(config_path="conf", config_name="train_config", version_base=None)
+@hydra.main(config_path="conf", config_name="train_muon_config", version_base=None)
 def main(cfg: TrainConfig) -> None:
     """
     Main training loop managed by Hydra.
@@ -89,7 +89,7 @@ def main(cfg: TrainConfig) -> None:
 
     # Initialize the optimizers
     optimizer_adam = AdamW(other_params, lr=cfg.optimizer.max_lr, betas=(0.9, 0.999), weight_decay=0.01)
-    optimizer_muon = Muon(hidden_matrix_params, lr=0.05, momentum=0.95, weight_decay=0.0) # Muon params from snippet
+    optimizer_muon = Muon(hidden_matrix_params, lr=cfg.optimizer.muon_lr, momentum=0.95, weight_decay=0.0) # Muon params from snippet
     optimizers:list[torch.optim.Optimizer] = [optimizer_adam, optimizer_muon]
     for opt in optimizers:
         for group in opt.param_groups:
@@ -118,9 +118,10 @@ def main(cfg: TrainConfig) -> None:
                 param_group['lr'] = param_group['initial_lr'] * lr_scale
         
         # Momentum warmup for Muon
-        frac = min(it / 300, 1.0) # As per the snippet
-        for group in optimizer_muon.param_groups:
-            group["momentum"] = (1 - frac) * 0.85 + frac * 0.95
+        if cfg.optimizer.mm_warmup:
+            frac = min(it / cfg.optimizer.mm_warmup_steps, 1.0) # As per the snippet
+            for group in optimizer_muon.param_groups:
+                group["momentum"] = (1 - frac) * 0.85 + frac * 0.95
 
         # Get a batch of data
         x, y = get_batch(train_data, cfg.training.batch_size, cfg.model.context_length, device)
@@ -135,7 +136,7 @@ def main(cfg: TrainConfig) -> None:
         loss.backward()
         
         # Gradient Clipping
-        grad_norm = gradient_clipping(model.parameters(), max_l2_norm=1.0)
+        grad_norm = gradient_clipping(model.parameters(), max_l2_norm=cfg.optimizer.max_l2_norm)
 
         for opt in optimizers:
             opt.step()

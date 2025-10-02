@@ -9,10 +9,9 @@ from cs336_basics.config import TrainConfig
 
 # Load model from checkpoint
 # the best model of openwebtext
-ckpt_path = "/inspire/hdd/global_user/donglinkang-253108120084/standford-cs336/assignment1-basics/outputs/multiruns/2025-09-28_20-56-56/4/ckpt_19999.pt"
+# ckpt_path = "/inspire/hdd/global_user/donglinkang-253108120084/standford-cs336/assignment1-basics/outputs/multiruns/2025-09-28_20-56-56/4/ckpt_19999.pt"
 # the best model of tinystories
-# ckpt_path = "/inspire/hdd/global_user/donglinkang-253108120084/standford-cs336/assignment1-basics/outputs/multiruns/2025-09-28_20-36-53/4/ckpt_19999.pt"
-ckpt_path = "/inspire/hdd/global_user/donglinkang-253108120084/standford-cs336/assignment1-basics/outputs/runs/2025-09-30_06-59-52/ckpt_39999.pt"
+ckpt_path = "/inspire/hdd/global_user/donglinkang-253108120084/standford-cs336/assignment1-basics/outputs/runs/2025-10-02_05-14-38/ckpt_19999.pt"
 # get config file
 cfg_path = Path(ckpt_path).parent / ".hydra" / "config.yaml"
 cfg:TrainConfig = OmegaConf.load(cfg_path)
@@ -20,6 +19,8 @@ print("Configuration:\n", OmegaConf.to_yaml(cfg, resolve=True))
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model = TransformerLM(**cfg.model).to(device)
+if cfg.training.is_compile:
+    model = torch.compile(model)
 checkpoint = torch.load(ckpt_path, map_location=device)
 model.load_state_dict(checkpoint['model_state_dict'])
 print(f"Loaded model from {ckpt_path}")
