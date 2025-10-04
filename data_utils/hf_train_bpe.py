@@ -17,15 +17,16 @@ def main():
     # !!!IMPORTANT!!! 
     # Please replace this path with the actual path to your TinyStories dataset file
     file_list = [
-        "data/TinyStoriesV2-GPT4-train.txt",
-        "data/TinyStoriesV2-GPT4-valid.txt",
-        # "data/owt_train.txt",
-        # "data/owt_valid.txt",
+        # "data/TinyStoriesV2-GPT4-train.txt",
+        # "data/TinyStoriesV2-GPT4-valid.txt",
+        "data/owt_train.txt",
+        "data/owt_valid.txt",
     ]
-    vocab_size = 10000
+    # vocab_size = 10000
+    vocab_size = 32000
     special_tokens = ["<|endoftext|>"]
-    out_dir = "hf_tokenizer/tinystories"
-    # out_dir = "hf_tokenizer/openwebtext"
+    # out_dir = "hf_tokenizer/tinystories"
+    out_dir = "hf_tokenizer/openwebtext-32k"
     output_dir = Path(out_dir)
 
     # Create output directory
