@@ -24,7 +24,7 @@ def main():
     ]
     vocab_size = 10000
     special_tokens = ["<|endoftext|>"]
-    out_dir = "hf_tokenizer/tinystories1"
+    out_dir = "hf_tokenizer/tinystories"
     # out_dir = "hf_tokenizer/openwebtext"
     output_dir = Path(out_dir)
 
