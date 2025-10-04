@@ -92,10 +92,10 @@ def process_train_val(
 
 
 def main():
-    tokenizer_path = Path("hf_tokenizer/openwebtext/tokenizer.json")
+    tokenizer_path = Path("hf_tokenizer/openwebtext-32k/tokenizer.json")
     train_input_path = Path("data/owt_train.txt")
     val_input_path = Path("data/owt_valid.txt")
-    output_dir = Path("data/openwebtext")
+    output_dir = Path("data/openwebtext-32k")
     
     # tokenizer_path = Path("hf_tokenizer/tinystories/tokenizer.json")
     # train_input_path = Path("data/TinyStoriesV2-GPT4-train.txt")
