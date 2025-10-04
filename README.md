@@ -35,24 +35,13 @@ functions in [./tests/adapters.py](./tests/adapters.py).
 Download the TinyStories data and a subsample of OpenWebText
 
 ``` sh
-mkdir -p data
-cd data
-
-wget https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-train.txt
-wget https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-valid.txt
-
-wget https://huggingface.co/datasets/stanford-cs336/owt-sample/resolve/main/owt_train.txt.gz
-gunzip owt_train.txt.gz
-wget https://huggingface.co/datasets/stanford-cs336/owt-sample/resolve/main/owt_valid.txt.gz
-gunzip owt_valid.txt.gz
-
-cd ..
+bash data_utils/download_dataset.sh
 ```
 
-Our data is stored on the path `/inspire/dataset/cs336/v1`
+Our data is stored on the path `data`
 
 ```bash
-(cs336-basics) [root:assignment1-basics]$ ls -ahl /inspire/dataset/cs336/v1
+(cs336-basics) [root:assignment1-basics]$ ls -ahl data
 total 14G
 drwxr-xr-x 2 root root 4.0K Sep  7 14:10 .
 drwxr-xr-x 3 root root   24 Sep  8 14:47 ..
