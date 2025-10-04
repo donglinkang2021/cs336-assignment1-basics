@@ -9,9 +9,9 @@ from cs336_basics.config import TrainConfig
 
 # Load model from checkpoint
 # the best model of openwebtext
-# ckpt_path = "/inspire/hdd/global_user/donglinkang-253108120084/standford-cs336/assignment1-basics/outputs/multiruns/2025-09-28_20-56-56/4/ckpt_19999.pt"
+# ckpt_path = "outputs/multiruns/2025-10-01_18-19-21/2/ckpt_4999.pt"
 # the best model of tinystories
-ckpt_path = "/inspire/hdd/global_user/donglinkang-253108120084/standford-cs336/assignment1-basics/outputs/runs/2025-10-02_05-14-38/ckpt_19999.pt"
+ckpt_path = "outputs/runs/2025-10-02_05-14-38/ckpt_19999.pt"
 # get config file
 cfg_path = Path(ckpt_path).parent / ".hydra" / "config.yaml"
 cfg:TrainConfig = OmegaConf.load(cfg_path)
