@@ -16,7 +16,7 @@ from cs336_basics.optimizer import AdamW, Muon, get_lr_cosine_schedule
 from cs336_basics.checkpoint import load_checkpoint, save_checkpoint
 from cs336_basics.generate import generate
 from cs336_basics.logger import Logger
-from cs336_basics.config_muon import TrainConfig
+from configs.config_muon import TrainConfig
 
 @torch.no_grad()
 def evaluate(model:TransformerLM, data, cfg: TrainConfig, device):
@@ -88,7 +88,13 @@ def main(cfg: TrainConfig) -> None:
             print(f"  AdamW: {n} - {p.shape}")
 
     # Initialize the optimizers
-    optimizer_adam = AdamW(other_params, lr=cfg.optimizer.max_lr, betas=(0.9, 0.999), weight_decay=0.01)
+    optimizer_adam = AdamW(
+        model.parameters(), 
+        lr=cfg.optimizer.max_lr, 
+        betas=cfg.optimizer.betas, 
+        weight_decay=cfg.optimizer.weight_decay,
+        eps=cfg.optimizer.eps
+    )
     optimizer_muon = Muon(hidden_matrix_params, lr=cfg.optimizer.muon_lr, momentum=0.95, weight_decay=0.0) # Muon params from snippet
     optimizers:list[torch.optim.Optimizer] = [optimizer_adam, optimizer_muon]
     for opt in optimizers:

@@ -5,7 +5,7 @@ from omegaconf import OmegaConf
 
 from cs336_basics.model import TransformerLM
 from cs336_basics.generate import generate
-from cs336_basics.config import TrainConfig
+from configs.config import TrainConfig
 
 # Load model from checkpoint
 # the best model of openwebtext

@@ -33,6 +33,9 @@ class OptimizerConfig:
     min_lr: float = 3e-5
     warmup_iters: int = 100
     max_l2_norm: float = 1.0 # For gradient clipping
+    weight_decay: float = 0.1
+    betas: tuple = (0.9, 0.999)
+    eps: float = 1e-8
     muon_lr: float = 5e-2
     mm_warmup: bool = True # muon_momentum = mm
     mm_warmup_steps: int = 300

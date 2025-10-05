@@ -16,7 +16,7 @@ from cs336_basics.optimizer import AdamW, get_lr_cosine_schedule
 from cs336_basics.checkpoint import load_checkpoint, save_checkpoint
 from cs336_basics.generate import generate
 from cs336_basics.logger import Logger
-from cs336_basics.config import TrainConfig
+from configs.config import TrainConfig
 
 @torch.no_grad()
 def evaluate(model:TransformerLM, data, cfg: TrainConfig, device):
@@ -71,7 +71,13 @@ def main(cfg: TrainConfig) -> None:
     if cfg.training.is_compile :
         model = torch.compile(model)
     
-    optimizer = AdamW(model.parameters(), lr=cfg.optimizer.max_lr)
+    optimizer = AdamW(
+        model.parameters(), 
+        lr=cfg.optimizer.max_lr, 
+        betas=cfg.optimizer.betas, 
+        weight_decay=cfg.optimizer.weight_decay,
+        eps=cfg.optimizer.eps
+    )
     
     start_iter = 0
     # --- Checkpoint Loading ---
