@@ -16,24 +16,23 @@ class Logger:
         self.writer = None
 
         config_dict = OmegaConf.to_container(config, resolve=True)
+        
+        init_kwargs = dict(
+            project=config.logger.project_name,
+            config=config_dict,
+            reinit=True
+        )
 
+        if hasattr(config.logger, 'run_name') and config.logger.run_name is not None:
+            init_kwargs["name"] = config.logger.run_name
+        
         if self.logger_type == "swanlab":
             import swanlab
-            swanlab.init(
-                project=config.logger.project_name,
-                name=config.logger.run_name,
-                config=config_dict,
-                reinit=True
-            )
+            swanlab.init(**init_kwargs)
             self.writer = swanlab
         elif self.logger_type == "wandb":
             import wandb
-            wandb.init(
-                project=config.logger.project_name,
-                name=config.logger.run_name,
-                config=config_dict,
-                reinit=True
-            )
+            wandb.init(**init_kwargs)
             self.writer = wandb
         elif self.logger_type == "tensorboard":
             current_time = datetime.now().strftime(r"%Y%m%d-%H%M%S")
