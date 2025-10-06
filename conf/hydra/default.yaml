@@ -1,11 +1,3 @@
-# https://hydra.cc/docs/configure_hydra/intro/
-
-# enable color logging
-# need to pip install hydra_colorlog --upgrade
-defaults:
-  - override hydra_logging: colorlog
-  - override job_logging: colorlog
-
 # output directory, generated dynamically on each run
 run:
   dir: ${training.out_dir}/runs/${now:%Y-%m-%d}_${now:%H-%M-%S}

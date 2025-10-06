@@ -16,7 +16,7 @@ from cs336_basics.optimizer import AdamW, get_lr_cosine_schedule
 from cs336_basics.checkpoint import load_checkpoint, save_checkpoint
 from cs336_basics.generate import generate
 from cs336_basics.logger import Logger
-from configs.config import TrainConfig
+from cs336_basics.config import TrainConfig
 
 @torch.no_grad()
 def evaluate(model:TransformerLM, data, cfg: TrainConfig, device):
@@ -40,15 +40,25 @@ def evaluate(model:TransformerLM, data, cfg: TrainConfig, device):
         'val/entropy': np.mean(entropies)
     }
 
+def setup(cfg: TrainConfig):
+    if cfg.optimizer.min_lr is None:
+        cfg.optimizer.min_lr = cfg.optimizer.max_lr * 0.1
+    if cfg.training.eval_interval is None:
+        cfg.training.eval_interval = cfg.training.max_iters // 10
+    if cfg.training.max_iters is None:
+        cfg.training.max_iters = 327_680_000 // cfg.training.batch_size // cfg.model.context_length
+    if cfg.optimizer.warmup_iters is None:
+        cfg.optimizer.warmup_iters = cfg.training.max_iters // 10
 
 @hydra.main(config_path="conf", config_name="train_config", version_base=None)
 def main(cfg: TrainConfig) -> None:
     """
     Main training loop managed by Hydra.
     """
+    # --- Setup ---
+    setup(cfg)
     # print("Configuration:\n", OmegaConf.to_yaml(cfg, resolve=True))
     # return
-    # --- Setup ---
     logger = Logger(cfg)
     output_dir = Path(HydraConfig.get().runtime.output_dir)
     print(f"Output directory: {output_dir}")

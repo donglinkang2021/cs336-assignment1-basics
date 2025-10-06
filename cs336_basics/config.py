@@ -30,8 +30,8 @@ class ModelConfig:
 class OptimizerConfig:
     """Optimizer configuration."""
     max_lr: float = 3e-4
-    min_lr: float = 3e-5
-    warmup_iters: int = 100
+    min_lr: Optional[float] = None # 3e-5
+    warmup_iters: Optional[int] = None # 500
     max_l2_norm: float = 1.0 # For gradient clipping
     weight_decay: float = 0.1
     betas: tuple = (0.9, 0.999)
@@ -43,7 +43,7 @@ class TrainingConfig:
     seed: int = 1337
     is_compile: bool = False # torch.compile the model or not
     batch_size: int = 256
-    max_iters: int = 5000
+    max_iters: Optional[int] = None # 5000
     log_interval: int = 10
     eval_interval: int = 500
     eval_iters: int = 200
@@ -111,3 +111,20 @@ class TrainConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     logger: Any = field(default_factory=LoggerConfig) # Use Any for flexibility with different loggers
     hydra: HydraConfig = field(default_factory=HydraConfig)
+
+@dataclass
+class MuonOptimizerConfig(OptimizerConfig):
+    """Muon optimizer configuration extending base optimizer config."""
+    # Muon-specific parameters
+    muon_lr: float = 5e-2
+    mm_warmup: bool = True # muon_momentum = mm
+    mm_warmup_steps: int = 500
+
+@dataclass
+class MuonTrainConfig(TrainConfig):
+    """
+    Muon training configuration that extends the base config.
+    Only overrides the optimizer to use MuonOptimizerConfig.
+    """
+    # Override the optimizer field to use MuonOptimizerConfig
+    optimizer: MuonOptimizerConfig = field(default_factory=MuonOptimizerConfig)

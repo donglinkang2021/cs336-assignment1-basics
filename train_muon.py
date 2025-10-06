@@ -16,10 +16,10 @@ from cs336_basics.optimizer import AdamW, Muon, get_lr_cosine_schedule
 from cs336_basics.checkpoint import load_checkpoint, save_checkpoint
 from cs336_basics.generate import generate
 from cs336_basics.logger import Logger
-from configs.config_muon import TrainConfig
+from cs336_basics.config import MuonTrainConfig
 
 @torch.no_grad()
-def evaluate(model:TransformerLM, data, cfg: TrainConfig, device):
+def evaluate(model:TransformerLM, data, cfg: MuonTrainConfig, device):
     """
     Estimates the loss over a number of batches.
     """
@@ -42,7 +42,7 @@ def evaluate(model:TransformerLM, data, cfg: TrainConfig, device):
 
 
 @hydra.main(config_path="conf", config_name="train_muon_config", version_base=None)
-def main(cfg: TrainConfig) -> None:
+def main(cfg: MuonTrainConfig) -> None:
     """
     Main training loop managed by Hydra.
     """
@@ -89,7 +89,7 @@ def main(cfg: TrainConfig) -> None:
 
     # Initialize the optimizers
     optimizer_adam = AdamW(
-        model.parameters(), 
+        other_params, 
         lr=cfg.optimizer.max_lr, 
         betas=cfg.optimizer.betas, 
         weight_decay=cfg.optimizer.weight_decay,

@@ -1,7 +1,7 @@
 seed: 1337
-is_compile: false
-batch_size: 64
-max_iters: 20000
+is_compile: true
+batch_size: 256
+max_iters: null
 log_interval: 10
 eval_interval: 500
 eval_iters: 200
