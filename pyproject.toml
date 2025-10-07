@@ -28,6 +28,7 @@ dependencies = [
     "debugpy>=1.8.17",
     "pybind11>=3.0.1",
     "tokenizers>=0.22.1",
+    "rich>=14.1.0",
 ]
 
 [build-system]

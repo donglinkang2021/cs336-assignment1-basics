@@ -273,10 +273,27 @@ from functools import lru_cache
 def get_rope(theta: float, d_k: int, max_seq_len: int) -> RotaryPositionalEmbedding:
     return RotaryPositionalEmbedding(theta, d_k, max_seq_len)
 
+class KVCache(nn.Module):
+    def __init__(self, batch_size, n_kv_heads, seq_length, head_dim, dtype, device):
+        super().__init__()
+        cache_shape = (batch_size, n_kv_heads, seq_length, head_dim)
+        self.register_buffer("cache_k", torch.zeros(cache_shape, dtype=dtype, device=device))
+        self.register_buffer("cache_v", torch.zeros(cache_shape, dtype=dtype, device=device))
+
+    def update(self, positions, xk, xv):
+        seq_len = xk.size(2)
+        start_pos = positions[0].item()  # assuming all positions are the same in the batch
+        self.cache_k[:, :, positions] = xk
+        self.cache_v[:, :, positions] = xv        
+        cached_k = self.cache_k[:, :, :start_pos + seq_len]
+        cached_v = self.cache_v[:, :, :start_pos + seq_len]
+        return cached_k, cached_v
+
 class TransformerAttention(nn.Module):
     """ Transformer Attention with RoPE for TransformerBlock """
     d_model: int
     num_heads: int
+    theta: float
     
     def __init__(
         self, 
@@ -290,11 +307,15 @@ class TransformerAttention(nn.Module):
         self.d_model = d_model
         self.num_heads = num_heads
         self.head_dim = d_model // num_heads
+        self.theta = theta
         self.q_proj = Linear(d_model, d_model)
         self.k_proj = Linear(d_model, d_model)
         self.v_proj = Linear(d_model, d_model)
         self.output_proj = Linear(d_model, d_model)
         self.rope = get_rope(theta, self.head_dim, max_seq_len)
+        
+        # KV cache will be managed by inference context manager
+        self.cache = None
     
     def forward(self, x:torch.Tensor, token_positions: torch.Tensor = None) -> torch.Tensor:
         # [batch, seq_len, d_model] -> [batch, seq_len, d_model]
@@ -308,12 +329,24 @@ class TransformerAttention(nn.Module):
         if self.rope is not None:
             xq = self.rope(xq, token_positions)
             xk = self.rope(xk, token_positions)
-        mask = torch.ones((seq_len, seq_len), device=x.device).tril()
-        mask = rearrange(mask, 'T1 T2 -> 1 1 T1 T2')
+        
+        # KV cache update
+        if self.cache is not None and token_positions is not None:
+            xk, xv = self.cache.update(token_positions, xk, xv)
+            cache_len = token_positions[0].item()  # assuming all positions are the same in the batch
+            mask = torch.hstack(
+                [torch.ones((seq_len, cache_len), device=x.device, dtype=x.dtype),
+                 torch.ones((seq_len, seq_len), device=x.device, dtype=x.dtype).tril()]
+            )
+            mask = rearrange(mask, 'T1 T2 -> 1 1 T1 T2')
+        else:
+            # Standard causal mask for non-cached case
+            mask = torch.ones((seq_len, seq_len), device=x.device, dtype=x.dtype).tril()
+            mask = rearrange(mask, 'T1 T2 -> 1 1 T1 T2')
+            
         xo = scaled_dot_product_attention(xq, xk, xv, mask)
         xo = rearrange(xo, 'B nH T Hs -> B T (nH Hs)')
         return self.output_proj(xo)
-
 
 # uv run pytest -k test_transformer_block
 class TransformerBlock(nn.Module):
@@ -352,13 +385,13 @@ class TransformerBlock(nn.Module):
             self.ln1 = RMSNorm(d_model)
             self.ln2 = RMSNorm(d_model)
         
-    def forward(self, x:torch.Tensor) -> torch.Tensor:
+    def forward(self, x:torch.Tensor, token_positions: torch.Tensor = None) -> torch.Tensor:
         # [batch, seq_len, d_model] -> [batch, seq_len, d_model]
         if self.use_post_norm:
-            x = self.ln1(x + self.attn(x))
+            x = self.ln1(x + self.attn(x, token_positions))
             x = self.ln2(x + self.ffn(x))
         else:
-            x = x + self.attn(self.ln1(x))
+            x = x + self.attn(self.ln1(x), token_positions)
             x = x + self.ffn(self.ln2(x))
         return x
 
@@ -399,13 +432,13 @@ class TransformerLM(nn.Module):
         self.max_seq_len = context_length
         self.apply(init_weights)
         
-    def forward(self, token_ids:torch.Tensor) -> torch.Tensor:
+    def forward(self, token_ids:torch.Tensor, token_positions: torch.Tensor = None) -> torch.Tensor:
         # [batch, seq_len] -> [batch, seq_len, vocab_size]
         seq_len = token_ids.size(1)
         assert seq_len <= self.max_seq_len, "Sequence length exceeds model capacity"
         x = self.token_embeddings(token_ids)
         for layer in self.layers:
-            x = layer(x)
+            x = layer(x, token_positions)
         x = self.ln_final(x)
         logits = self.lm_head(x)
         return logits
