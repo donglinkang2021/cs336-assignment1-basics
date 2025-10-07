@@ -14,7 +14,7 @@ from cs336_basics.model import TransformerLM
 from cs336_basics.nn_utils import cross_entropy, gradient_clipping, compute_entropy_chunked
 from cs336_basics.optimizer import AdamW, Muon, get_lr_cosine_schedule
 from cs336_basics.checkpoint import load_checkpoint, save_checkpoint
-from cs336_basics.generate import generate
+from cs336_basics.generate import generate, install_kv_cache
 from cs336_basics.logger import Logger
 from cs336_basics.config import MuonTrainConfig
 
@@ -40,15 +40,25 @@ def evaluate(model:TransformerLM, data, cfg: MuonTrainConfig, device):
         'val/entropy': np.mean(entropies)
     }
 
+def setup(cfg: MuonTrainConfig):
+    if cfg.optimizer.min_lr is None:
+        cfg.optimizer.min_lr = cfg.optimizer.max_lr * 0.1
+    if cfg.training.eval_interval is None:
+        cfg.training.eval_interval = cfg.training.max_iters // 10
+    if cfg.training.max_iters is None:
+        cfg.training.max_iters = 327_680_000 // cfg.training.batch_size // cfg.model.context_length
+    if cfg.optimizer.warmup_iters is None:
+        cfg.optimizer.warmup_iters = cfg.training.max_iters // 10
 
 @hydra.main(config_path="conf", config_name="train_muon_config", version_base=None)
 def main(cfg: MuonTrainConfig) -> None:
     """
     Main training loop managed by Hydra.
     """
+    # --- Setup ---
+    setup(cfg)
     # print("Configuration:\n", OmegaConf.to_yaml(cfg, resolve=True))
     # return
-    # --- Setup ---
     logger = Logger(cfg)
     output_dir = Path(HydraConfig.get().runtime.output_dir)
     print(f"Output directory: {output_dir}")
@@ -169,9 +179,10 @@ def main(cfg: MuonTrainConfig) -> None:
             tqdm.write(f"Iter {it}: Val loss={metrics['val/loss']:.4f}")
             logger.log_metrics(metrics, step=it)
             
-            checkpoint_path = output_dir / f'ckpt_{it}.pt'
-            tqdm.write(f"Saving checkpoint to {checkpoint_path}")
-            save_checkpoint(model, optimizers, it, checkpoint_path)
+            if cfg.training.save_ckpt:
+                checkpoint_path = output_dir / f'ckpt_{it}.pt'
+                tqdm.write(f"Saving checkpoint to {checkpoint_path}")
+                save_checkpoint(model, optimizers, it, checkpoint_path)
     
     tqdm.write("Training finished.")
     
@@ -180,6 +191,9 @@ def main(cfg: MuonTrainConfig) -> None:
     tokenizer = Tokenizer.from_file(tokenizer_path)
     context = torch.zeros((1, 1), dtype=torch.long, device=device)
     print("Beginning generation...")
+    if cfg.training.is_compile:
+        model = model._orig_mod # unwrap compiled model
+        install_kv_cache(model, batch_size=1, total_len=cfg.model.context_length + 1000)
     generated_output = tokenizer.decode(
         generate(
             model, 
@@ -187,7 +201,8 @@ def main(cfg: MuonTrainConfig) -> None:
             max_new_tokens=1000, 
             block_size=cfg.model.context_length,
             temperature=0.6,
-            top_p=0.95
+            top_p=0.95,
+            use_kv_cache=True
         )[0].tolist()
     )    
     tqdm.write("\n--- Generated Text ---")
