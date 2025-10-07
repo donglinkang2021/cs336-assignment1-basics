@@ -7,3 +7,4 @@ eval_interval: 500
 eval_iters: 200
 resume_from: null # Path to a checkpoint `.pt` to resume from
 out_dir: outputs
+save_ckpt: false # Whether to save checkpoints during training

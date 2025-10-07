@@ -14,7 +14,7 @@ from cs336_basics.model import TransformerLM
 from cs336_basics.nn_utils import cross_entropy, gradient_clipping, compute_entropy_chunked
 from cs336_basics.optimizer import AdamW, get_lr_cosine_schedule
 from cs336_basics.checkpoint import load_checkpoint, save_checkpoint
-from cs336_basics.generate import generate
+from cs336_basics.generate import generate, install_kv_cache
 from cs336_basics.logger import Logger
 from cs336_basics.config import TrainConfig
 
@@ -140,9 +140,10 @@ def main(cfg: TrainConfig) -> None:
             tqdm.write(f"Iter {it}: Val loss={metrics['val/loss']:.4f}")
             logger.log_metrics(metrics, step=it)
             
-            checkpoint_path = output_dir / f'ckpt_{it}.pt'
-            tqdm.write(f"Saving checkpoint to {checkpoint_path}")
-            save_checkpoint(model, optimizer, it, checkpoint_path)
+            if cfg.training.save_ckpt:
+                checkpoint_path = output_dir / f'ckpt_{it}.pt'
+                tqdm.write(f"Saving checkpoint to {checkpoint_path}")
+                save_checkpoint(model, optimizer, it, checkpoint_path)
     
     tqdm.write("Training finished.")
     
@@ -151,6 +152,9 @@ def main(cfg: TrainConfig) -> None:
     tokenizer = Tokenizer.from_file(tokenizer_path)
     context = torch.zeros((1, 1), dtype=torch.long, device=device)
     print("Beginning generation...")
+    if cfg.training.is_compile:
+        model = model._orig_mod # unwrap compiled model
+        install_kv_cache(model, batch_size=1, total_len=cfg.model.context_length + 1000)
     generated_output = tokenizer.decode(
         generate(
             model, 
@@ -158,7 +162,8 @@ def main(cfg: TrainConfig) -> None:
             max_new_tokens=1000, 
             block_size=cfg.model.context_length,
             temperature=0.6,
-            top_p=0.95
+            top_p=0.95,
+            use_kv_cache=True
         )[0].tolist()
     )    
     tqdm.write("\n--- Generated Text ---")

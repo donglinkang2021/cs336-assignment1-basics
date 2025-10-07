@@ -49,6 +49,7 @@ class TrainingConfig:
     eval_iters: int = 200
     resume_from: Optional[str] = None
     out_dir: str = "outputs" # From training/default.yaml
+    save_ckpt: bool = False
 
 @dataclass
 class LoggerConfig:
