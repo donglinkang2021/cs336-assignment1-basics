@@ -1,0 +1,10 @@
+CUDA_VISIBLE_DEVICES=6 uv run train.py -m \
+    model.vocab_size=32000 \
+    data.path=data/openwebtext-32k \
+    data.tokenizer_path=hf_tokenizer/openwebtext-32k/tokenizer.json \
+    training.batch_size=128 \
+    optimizer.max_lr=1e-5,3e-5,1e-4,3e-4,1e-3,3e-3,6e-3,1e-2,3e-2 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=owt-lr${optimizer.max_lr}'

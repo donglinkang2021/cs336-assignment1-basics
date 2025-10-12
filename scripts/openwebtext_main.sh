@@ -1,0 +1,32 @@
+CUDA_VISIBLE_DEVICES=6 uv run train.py \
+    model.vocab_size=32000 \
+    data.path=data/openwebtext-32k \
+    data.tokenizer_path=hf_tokenizer/openwebtext-32k/tokenizer.json \
+    training.batch_size=128 \
+    optimizer.max_lr=1e-2 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=main-owt'
+
+CUDA_VISIBLE_DEVICES=6 uv run train.py \
+    model.vocab_size=32000 \
+    data.path=data/openwebtext-32k \
+    data.tokenizer_path=hf_tokenizer/openwebtext-32k/tokenizer.json \
+    training.batch_size=64 \
+    optimizer.max_lr=1e-2 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=main-owt-bs64'
+
+CUDA_VISIBLE_DEVICES=6 uv run train.py \
+    model.vocab_size=32000 \
+    data.path=data/openwebtext-32k \
+    data.tokenizer_path=hf_tokenizer/openwebtext-32k/tokenizer.json \
+    training.batch_size=32 \
+    optimizer.max_lr=1e-2 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=main-owt-bs32'

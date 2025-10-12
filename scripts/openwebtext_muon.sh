@@ -1,0 +1,11 @@
+CUDA_VISIBLE_DEVICES=5 uv run train_muon.py -m \
+    model.vocab_size=32000 \
+    data.path=data/openwebtext-32k \
+    data.tokenizer_path=hf_tokenizer/openwebtext-32k/tokenizer.json \
+    training.batch_size=128 \
+    optimizer.muon_lr=1e-3,3e-3,1e-2,3e-2,6e-2,1e-1 \
+    optimizer.max_lr=1e-2 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=owt-muonlr${optimizer.muon_lr}'

@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.1.0] - 20251012
+
+- [exps] add the exp scripts for muon lr exps based on best adamw lr 0.01
+- [exps] add the exp scripts for answering each problem in the handout
+
+### Record
+
+前期花了很多在试错上，发现一开始就应该按照文档的步骤来才对的，应该先搜参，自己之前一直都是用比较小的学习率3e-4来学，怪不得学到的效果不好，其实应该在初步试错muon发现muon的最优学习率是3e-2的时候就应该发现adamw的学习率可能也不太对；目前发现kv cache可以显著减少显存（当batch_size特别大的时候，而batch_size=1的时候则不明显），muon确实可以使得训练效果变好（但前期实验都是因为学习率的影响，所以不能排除是大学习率使得变好而不是因为muon的效果），随着模型的层数的增加和model_dim的增加也会有比较好的表现；后续打算进一步优化一下模型的架构试一下（先不急着scale up），添加新的组件来尝试一下，当前架构如下：
+
+```python
+TransformerLM(
+  (token_embeddings): Embedding()
+  (layers): ModuleList(
+    (0-(N-1)): N x TransformerBlock(
+      (attn): TransformerAttention(
+        (q_proj): Linear()
+        (k_proj): Linear()
+        (v_proj): Linear()
+        (output_proj): Linear()
+        (rope): RotaryPositionalEmbedding()
+      )
+      (ffn): SwiGLU(
+        (w1): Linear()
+        (w2): Linear()
+        (w3): Linear()
+      )
+      (ln1): RMSNorm()
+      (ln2): RMSNorm()
+    )
+  )
+  (ln_final): RMSNorm()
+  (lm_head): Linear()
+)
+```
+
 ## [0.0.5] - 20250927
 
 - [code] add training script, integrating with logger, add the default config, need tokenizer to tokenize the txt before

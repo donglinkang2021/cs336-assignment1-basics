@@ -49,6 +49,8 @@ def setup(cfg: MuonTrainConfig):
         cfg.training.max_iters = 327_680_000 // cfg.training.batch_size // cfg.model.context_length
     if cfg.optimizer.warmup_iters is None:
         cfg.optimizer.warmup_iters = cfg.training.max_iters // 10
+    if cfg.optimizer.mm_warmup_steps is None:
+        cfg.optimizer.mm_warmup_steps = cfg.optimizer.warmup_iters
 
 @hydra.main(config_path="conf", config_name="train_muon_config", version_base=None)
 def main(cfg: MuonTrainConfig) -> None:
