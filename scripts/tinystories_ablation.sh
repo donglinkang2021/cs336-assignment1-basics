@@ -42,3 +42,95 @@ uv run train.py \
     optimizer.max_l2_norm=2.0 \
     optimizer.betas="[0.9,0.95]" \
     'logger.run_name=baseline-ts-wo_rope'
+
+export CUDA_VISIBLE_DEVICES=7
+uv run train.py \
+    training.batch_size=128 \
+    optimizer.max_lr=1e-3 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=baseline-ts-lr${optimizer.max_lr}'
+
+uv run train.py \
+    training.batch_size=128 \
+    model.ffn_type=silu \
+    model.d_ff=2048 \
+    optimizer.max_lr=1e-3 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=baseline-ts-lr${optimizer.max_lr}-swiglu2silu'
+
+uv run train.py \
+    training.batch_size=128 \
+    model.use_post_norm=true \
+    optimizer.max_lr=1e-3 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=baseline-ts-lr${optimizer.max_lr}-prenorm2postnorm'
+
+uv run train.py \
+    training.batch_size=128 \
+    model.remove_rmsnorm=true \
+    optimizer.max_lr=1e-3 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=baseline-ts-lr${optimizer.max_lr}-wo_rmsnorm'
+
+uv run train.py \
+    training.batch_size=128 \
+    model.remove_rope=true \
+    optimizer.max_lr=1e-3 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=baseline-ts-lr${optimizer.max_lr}-wo_rope'
+
+export CUDA_VISIBLE_DEVICES=7
+uv run train.py \
+    training.batch_size=128 \
+    optimizer.max_lr=3e-4 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=baseline-ts-lr${optimizer.max_lr}'
+
+uv run train.py \
+    training.batch_size=128 \
+    model.ffn_type=silu \
+    model.d_ff=2048 \
+    optimizer.max_lr=3e-4 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=baseline-ts-lr${optimizer.max_lr}-swiglu2silu'
+
+uv run train.py \
+    training.batch_size=128 \
+    model.use_post_norm=true \
+    optimizer.max_lr=3e-4 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=baseline-ts-lr${optimizer.max_lr}-prenorm2postnorm'
+
+uv run train.py \
+    training.batch_size=128 \
+    model.remove_rmsnorm=true \
+    optimizer.max_lr=3e-4 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=baseline-ts-lr${optimizer.max_lr}-wo_rmsnorm'
+
+uv run train.py \
+    training.batch_size=128 \
+    model.remove_rope=true \
+    optimizer.max_lr=3e-4 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=baseline-ts-lr${optimizer.max_lr}-wo_rope'
