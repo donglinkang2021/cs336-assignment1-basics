@@ -301,6 +301,7 @@ class TransformerAttention(nn.Module):
         num_heads:int,
         max_seq_len:int,
         theta:float,
+        **kwargs
     ) -> None:
         super().__init__()
         assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
@@ -312,7 +313,12 @@ class TransformerAttention(nn.Module):
         self.k_proj = Linear(d_model, d_model)
         self.v_proj = Linear(d_model, d_model)
         self.output_proj = Linear(d_model, d_model)
-        self.rope = get_rope(theta, self.head_dim, max_seq_len)
+        
+        # Handle remove_rope option
+        if not kwargs.get('remove_rope', False):
+            self.rope = get_rope(theta, self.head_dim, max_seq_len)
+        else:
+            self.rope = None
         
         # KV cache will be managed by inference context manager
         self.cache = None
@@ -358,18 +364,21 @@ class TransformerBlock(nn.Module):
         d_ff:int,
         max_seq_len:int,
         theta:float,
-        ffn_type:str = 'swiglu',
-        use_post_norm:bool = False,
-        remove_rmsnorm:bool = False,
-        remove_rope:bool = False,
+        **kwargs
     ) -> None:
         super().__init__()
+        
+        # Extract options from kwargs with defaults
+        ffn_type = kwargs.get('ffn_type', 'swiglu')
+        use_post_norm = kwargs.get('use_post_norm', False)
+        remove_rmsnorm = kwargs.get('remove_rmsnorm', False)
+        
+        # Create attention layer with kwargs
         self.attn = TransformerAttention(
-            d_model, num_heads, max_seq_len, theta
+            d_model, num_heads, max_seq_len, theta, **kwargs
         )
-        if remove_rope:
-            self.attn.rope = None
 
+        # Create FFN layer
         if ffn_type == 'swiglu':
             self.ffn = SwiGLU(d_model, d_ff)
         elif ffn_type == 'silu':
@@ -377,6 +386,7 @@ class TransformerBlock(nn.Module):
         else:
             raise ValueError(f"Unknown ffn_type: {ffn_type}")
 
+        # Create normalization layers
         self.use_post_norm = use_post_norm
         if remove_rmsnorm:
             self.ln1 = nn.Identity()
@@ -407,22 +417,15 @@ class TransformerLM(nn.Module):
         num_heads:int,
         d_ff:int,
         rope_theta:float,
-        ffn_type:str = 'swiglu',
-        use_post_norm:bool = False,
-        remove_rmsnorm:bool = False,
-        remove_rope:bool = False,
+        **kwargs
     ) -> None:
         super().__init__()
+        remove_rmsnorm = kwargs.get('remove_rmsnorm', False)
         self.token_embeddings = Embedding(vocab_size, d_model)
         self.layers = nn.ModuleList([
             TransformerBlock(
-                d_model, num_heads, d_ff, context_length, rope_theta,
-                ffn_type=ffn_type,
-                use_post_norm=use_post_norm,
-                remove_rmsnorm=remove_rmsnorm,
-                remove_rope=remove_rope,
-            )
-            for _ in range(num_layers)
+                d_model, num_heads, d_ff, context_length, rope_theta, **kwargs
+            ) for _ in range(num_layers)
         ])
         if remove_rmsnorm:
             self.ln_final = nn.Identity()
