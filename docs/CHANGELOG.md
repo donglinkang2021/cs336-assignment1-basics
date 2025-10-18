@@ -1,5 +1,68 @@
 # Changelog
 
+## [0.1.1] - 20251018
+
+- [code] modify the model initialization to use `kwargs` for flexibility
+
+## Record
+
+```python
+from cs336_basics.model import TransformerLM
+
+model = TransformerLM(
+    vocab_size=32000,
+    context_length=1024,
+    d_model=512,
+    num_layers=6,
+    num_heads=8,
+    d_ff=2048,
+    rope_theta=10000.0,
+    ffn_type='silu',
+    use_post_norm=True,
+    remove_rmsnorm=False,
+    remove_rope=False,
+    add_qknorm=True,
+)
+
+print(model)
+```
+
+将原本的挨个参数传进去的方式写成了`kwargs`的方式传参，非常方便后续添加新的参数和修改参数；
+
+```python
+# demo_config.py
+import hydra
+from omegaconf import DictConfig, OmegaConf
+from cs336_basics.config import TrainConfig
+from cs336_basics.model import TransformerLM
+
+def setup(cfg: TrainConfig):
+    if cfg.optimizer.min_lr is None:
+        cfg.optimizer.min_lr = cfg.optimizer.max_lr * 0.1
+    if cfg.training.eval_interval is None:
+        cfg.training.eval_interval = cfg.training.max_iters // 10
+    if cfg.training.max_iters is None:
+        cfg.training.max_iters = 327_680_000 // cfg.training.batch_size // cfg.model.context_length
+    if cfg.optimizer.warmup_iters is None:
+        cfg.optimizer.warmup_iters = cfg.training.max_iters // 10
+
+@hydra.main(config_path="conf", config_name="train_config", version_base=None)
+def main(cfg: TrainConfig) -> None:
+    setup(cfg)
+    print("Configuration:\n", OmegaConf.to_yaml(cfg, resolve=True))
+    model = TransformerLM(**cfg.model)
+    print(model)
+    return
+
+if __name__ == "__main__":
+    main()
+```
+
+```bash
+python demo_config.py model.ffn_type=silu # 修改 model/default.yaml 里的 ffn_type 参数
+python demo_config.py +model.add_qknorm=True # 添加之前没有过的参数，不需要在 default.yaml 里定义
+```
+
 ## [0.1.0] - 20251012
 
 - [exps] add the exp scripts for muon lr exps based on best adamw lr 0.01

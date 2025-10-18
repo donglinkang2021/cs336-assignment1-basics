@@ -102,6 +102,11 @@ class RMSNorm(nn.Module):
         x_out = x * var.rsqrt() * self.weight
         return x_out.to(in_dtype)
 
+def norm(x:torch.Tensor, eps:float=1e-6) -> torch.Tensor:
+    """Functional RMS normalization without learnable parameters"""
+    var = x.pow(2).mean(dim=-1, keepdim=True) + eps
+    return x * var.rsqrt()
+
 # uv run pytest -k test_silu
 def silu(x:torch.Tensor) -> torch.Tensor:
     return x * torch.sigmoid(x)
@@ -319,6 +324,11 @@ class TransformerAttention(nn.Module):
             self.rope = get_rope(theta, self.head_dim, max_seq_len)
         else:
             self.rope = None
+
+        # Handle add_qknorm option
+        self.add_qknorm = kwargs.get('add_qknorm', False)
+        if self.add_qknorm:
+            print("Using QK normalization in TransformerAttention")
         
         # KV cache will be managed by inference context manager
         self.cache = None
@@ -332,6 +342,11 @@ class TransformerAttention(nn.Module):
         xq = rearrange(q, 'B T (nH Hs) -> B nH T Hs', Hs=self.head_dim)
         xk = rearrange(k, 'B T (nH Hs) -> B nH T Hs', Hs=self.head_dim)
         xv = rearrange(v, 'B T (nH Hs) -> B nH T Hs', Hs=self.head_dim)
+        
+        if self.add_qknorm:
+            xq = norm(xq)
+            xk = norm(xk)
+        
         if self.rope is not None:
             xq = self.rope(xq, token_positions)
             xk = self.rope(xk, token_positions)

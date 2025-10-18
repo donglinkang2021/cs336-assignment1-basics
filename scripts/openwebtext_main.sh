@@ -31,7 +31,8 @@ CUDA_VISIBLE_DEVICES=6 uv run train.py \
     optimizer.betas="[0.9,0.95]" \
     'logger.run_name=main-owt-bs32'
 
-CUDA_VISIBLE_DEVICES=6 uv run train_qknorm.py \
+CUDA_VISIBLE_DEVICES=6 uv run train.py \
+    +model.add_qknorm=True \
     model.vocab_size=32000 \
     data.path=data/openwebtext-32k \
     data.tokenizer_path=hf_tokenizer/openwebtext-32k/tokenizer.json \
