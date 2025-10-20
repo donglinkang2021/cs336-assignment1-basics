@@ -1,0 +1,27 @@
+CUDA_VISIBLE_DEVICES=7 uv run train.py \
+    +model.add_qknorm=True \
+    model.vocab_size=32000 \
+    data.path=data/openwebtext-32k \
+    data.tokenizer_path=hf_tokenizer/openwebtext-32k/tokenizer.json \
+    training.batch_size=128 \
+    training.max_iters=20000 \
+    optimizer.max_lr=1e-2 \
+    optimizer.min_lr=0 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=leaderboard-qknorm'
+
+CUDA_VISIBLE_DEVICES=7 uv run train.py \
+    +model.add_qknorm=True \
+    model.vocab_size=32000 \
+    data.path=data/openwebtext-32k \
+    data.tokenizer_path=hf_tokenizer/openwebtext-32k/tokenizer.json \
+    training.batch_size=128 \
+    training.max_iters=20000 \
+    optimizer.max_lr=1e-3 \
+    optimizer.min_lr=0 \
+    optimizer.weight_decay=0.01 \
+    optimizer.max_l2_norm=2.0 \
+    optimizer.betas="[0.9,0.95]" \
+    'logger.run_name=leaderboard-qknorm-lr1e-3'
