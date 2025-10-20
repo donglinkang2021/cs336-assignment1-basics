@@ -436,6 +436,7 @@ class TransformerLM(nn.Module):
     ) -> None:
         super().__init__()
         remove_rmsnorm = kwargs.get('remove_rmsnorm', False)
+        tie_embeddings = kwargs.get('tie_embeddings', False)
         self.token_embeddings = Embedding(vocab_size, d_model)
         self.layers = nn.ModuleList([
             TransformerBlock(
@@ -447,6 +448,8 @@ class TransformerLM(nn.Module):
         else:
             self.ln_final = RMSNorm(d_model)
         self.lm_head = Linear(d_model, vocab_size)
+        if tie_embeddings:
+            self.lm_head.weight = self.token_embeddings.weight
         self.max_seq_len = context_length
         self.apply(init_weights)
         
