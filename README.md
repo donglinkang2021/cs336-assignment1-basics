@@ -156,7 +156,8 @@ uv run train.py \
 ```sh
 uv run train_muon.py \
     model.vocab_size=32000 \
-    data.path=data/openwebtext-32k
+    data.path=data/openwebtext-32k \
+    data.tokenizer_path=hf_tokenizer/openwebtext-32k/tokenizer.json
 ```
 
 ### Configuration
@@ -244,6 +245,7 @@ For detailed experimental results, analysis, and comprehensive writeup, see:
 ### Document Structure
 
 The writeup is organized as follows:
+- **Section 1**: Overview
 - **Section 2**: BPE Tokenizer Implementation
 - **Section 3**: Transformer Architecture
 - **Section 4**: Language Model Training Objectives
@@ -271,3 +273,17 @@ This generates `cs336-spring2025-assignment-1-submission.zip` with all code and 
 ## 🙏 Acknowledgments
 
 Thanks to the CS336 teaching staff for this comprehensive assignment and leaderboard! Special thanks for providing the infrastructure and test suite that made this learning experience possible.
+
+## 📚 Citation
+
+If you find this repository useful, please cite it as:
+
+```bib
+@misc{dong2025cs336a1,
+  author       = {Dong, Linkang},
+  title        = {CS336 Assignment 1 Basics},
+  year         = {2025},
+  howpublished = {\url{https://github.com/donglinkang2021/cs336-assignment1-basics}},
+  note         = {GitHub repository},
+}
+```
