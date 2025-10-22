@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import math
+from einops import rearrange
 
 def init_weights(m:nn.Module):
     if isinstance(m, Linear):
@@ -149,6 +150,160 @@ class SiLUFFN(nn.Module):
         # [..., d_model] -> [..., d_model]
         return self.w2(silu(self.w1(x)))
 
+class VQFFN(nn.Module):
+    """ FFN with softmax """
+    d_model: int
+    d_ff: int
+
+    def __init__(self, d_model:int, d_ff:int) -> None:
+        super().__init__()
+        self.d_model = d_model
+        # should be d_ff = 4 * d_model, 
+        # then the parameter count = 2 * d_model * 4 * d_model = 8 * d_model^2
+        self.d_ff = d_ff
+        self.codebook = Linear(in_features=d_model, out_features=d_ff)
+
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        # [..., d_model] -> [..., d_model]
+        probs = torch.softmax(self.codebook(x), dim=-1)
+        return torch.einsum('...k,kd->...d', probs, self.codebook.weight)
+
+class MHVQFFN(nn.Module):
+    """ Multi-head vq FFN with softmax """
+    d_model: int
+    codebook_size: int
+    code_dim: int
+
+    def __init__(self, d_model:int, codebook_size:int, num_codebook:int=4, **kwargs) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.code_dim = d_model // num_codebook
+        self.codebook_size = codebook_size
+        self.weight = nn.Parameter(
+            torch.empty((num_codebook, codebook_size, self.code_dim), **kwargs)
+        )
+        self._init_weights()
+        
+    def _init_weights(self):
+        std = math.sqrt(2.0 / (self.codebook_size + self.code_dim))
+        nn.init.trunc_normal_(self.weight, mean=0.0, std=std, a=-3*std, b=3*std)
+
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        x = rearrange(x, 'B T (nH Hs) -> B nH T Hs', Hs=self.code_dim)
+        scores = torch.einsum('...htd,hcd->...htc', x, self.weight)
+        probs = torch.softmax(scores, dim=-1)
+        x = torch.einsum('...htc,hcd->...htd', probs, self.weight)
+        x = rearrange(x, 'B nH T Hs -> B T (nH Hs)')
+        return x
+
+
+class VQFFN1(nn.Module):
+    """ FFN with softmax """
+    d_model: int
+    d_ff: int
+
+    def __init__(self, d_model:int, d_ff:int, **kwargs) -> None:
+        super().__init__()
+        self.d_model = d_model
+        # should be d_ff = 4 * d_model, 
+        # then the parameter count = 2 * d_model * 4 * d_model = 8 * d_model^2
+        self.d_ff = d_ff
+        self.weight = nn.Parameter(
+            torch.empty((d_ff, d_model), **kwargs)
+        )
+        self._init_weights()
+        
+    def _init_weights(self):
+        std = math.sqrt(2.0 / (self.d_ff + self.d_model))
+        nn.init.trunc_normal_(self.weight, mean=0.0, std=std, a=-3*std, b=3*std)
+
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        # [..., d_model] -> [..., d_model]
+        scores = torch.einsum('...d,cd->...c', norm(x), norm(self.weight))
+        probs = torch.softmax(scores, dim=-1)
+        return torch.einsum('...c,cd->...d', probs, self.weight)
+
+class MHVQFFN1(nn.Module):
+    """ Multi-head vq FFN with softmax """
+    d_model: int
+    codebook_size: int
+    code_dim: int
+
+    def __init__(self, d_model:int, codebook_size:int, num_codebook:int=4, **kwargs) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.code_dim = d_model // num_codebook
+        self.codebook_size = codebook_size
+        self.weight = nn.Parameter(
+            torch.empty((num_codebook, codebook_size, self.code_dim), **kwargs)
+        )
+        self._init_weights()
+        
+    def _init_weights(self):
+        std = math.sqrt(2.0 / (self.codebook_size + self.code_dim))
+        nn.init.trunc_normal_(self.weight, mean=0.0, std=std, a=-3*std, b=3*std)
+
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        x = rearrange(x, 'B T (nH Hs) -> B nH T Hs', Hs=self.code_dim)
+        scores = torch.einsum('...htd,hcd->...htc', norm(x), norm(self.weight))
+        probs = torch.softmax(scores, dim=-1)
+        x = torch.einsum('...htc,hcd->...htd', probs, self.weight)
+        x = rearrange(x, 'B nH T Hs -> B T (nH Hs)')
+        return x
+
+
+class VQSiLUFFN(nn.Module):
+    """ FFN with softmax """
+    d_model: int
+    d_ff: int
+
+    def __init__(self, d_model:int, d_ff:int) -> None:
+        super().__init__()
+        self.d_model = d_model
+        # should be d_ff = 4 * d_model, 
+        # then the parameter count = 2 * d_model * 4 * d_model = 8 * d_model^2
+        self.d_ff = d_ff
+        self.w1 = Linear(in_features=d_model, out_features=d_ff)
+        self.w2 = Linear(in_features=d_ff, out_features=d_model)
+
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        # [..., d_model] -> [..., d_model]
+        probs = torch.softmax(self.w1(x), dim=-1)
+        return self.w2(probs)
+
+
+class MHVQSiLUFFN(nn.Module):
+    """ Multi-head vq FFN with softmax """
+    d_model: int
+    codebook_size: int
+    code_dim: int
+
+    def __init__(self, d_model:int, codebook_size:int, num_codebook:int=4, **kwargs) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.code_dim = d_model // num_codebook
+        self.codebook_size = codebook_size
+        self.weight1 = nn.Parameter(
+            torch.empty((num_codebook, codebook_size, self.code_dim), **kwargs)
+        )
+        self.weight2 = nn.Parameter(
+            torch.empty((num_codebook, codebook_size, self.code_dim), **kwargs)
+        )
+        self._init_weights()
+        
+    def _init_weights(self):
+        std = math.sqrt(2.0 / (self.codebook_size + self.code_dim))
+        for weight in [self.weight1, self.weight2]:
+            nn.init.trunc_normal_(weight, mean=0.0, std=std, a=-3*std, b=3*std)
+
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        x = rearrange(x, 'B T (nH Hs) -> B nH T Hs', Hs=self.code_dim)
+        scores = torch.einsum('...htd,hcd->...htc', x, self.weight1)
+        probs = torch.softmax(scores, dim=-1)
+        x = torch.einsum('...htc,hcd->...htd', probs, self.weight2)
+        x = rearrange(x, 'B nH T Hs -> B T (nH Hs)')
+        return x
+
 # uv run pytest -k test_rope
 class RotaryPositionalEmbedding(nn.Module):
     """ Rotary Positional Embedding (RoPE) """
@@ -208,7 +363,6 @@ def scaled_dot_product_attention(
 
 # uv run pytest -k test_multihead_self_attention
 # pass tests/test_model.py::test_multihead_self_attention
-from einops import rearrange
 class MultiheadSelfAttention(nn.Module):
     """ Multi-head self-attention layer """
     d_model: int
@@ -398,6 +552,24 @@ class TransformerBlock(nn.Module):
             self.ffn = SwiGLU(d_model, d_ff)
         elif ffn_type == 'silu':
             self.ffn = SiLUFFN(d_model, d_ff)
+        elif ffn_type == 'vq':
+            self.ffn = VQFFN(d_model, d_ff)
+        elif ffn_type == 'mhvq':
+            num_codebook = kwargs.get('num_codebook', 4)
+            codebook_size = kwargs.get('codebook_size', d_ff)
+            self.ffn = MHVQFFN(d_model, codebook_size, num_codebook)
+        elif ffn_type == 'vq1':
+            self.ffn = VQFFN1(d_model, d_ff)
+        elif ffn_type == 'mhvq1':
+            num_codebook = kwargs.get('num_codebook', 4)
+            codebook_size = kwargs.get('codebook_size', d_ff)
+            self.ffn = MHVQFFN1(d_model, codebook_size, num_codebook)
+        elif ffn_type == 'vqsilu':
+            self.ffn = VQSiLUFFN(d_model, d_ff)
+        elif ffn_type == 'mhvqsilu':
+            num_codebook = kwargs.get('num_codebook', 4)
+            codebook_size = kwargs.get('codebook_size', d_ff)
+            self.ffn = MHVQSiLUFFN(d_model, codebook_size, num_codebook)
         else:
             raise ValueError(f"Unknown ffn_type: {ffn_type}")
 
