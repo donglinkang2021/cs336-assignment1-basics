@@ -150,6 +150,107 @@ class SiLUFFN(nn.Module):
         # [..., d_model] -> [..., d_model]
         return self.w2(silu(self.w1(x)))
 
+class Head(nn.Module):
+    """ FFN without activation """
+    d_model: int
+    d_ff: int
+    head_dim: int
+
+    def __init__(self, d_model:int, d_ff:int, head_dim:int) -> None:
+        super().__init__()
+        self.d_model = d_model
+        # should be d_ff = 4 * d_model, 
+        # then the parameter count = 2 * d_model * 4 * d_model = 8 * d_model^2
+        self.d_ff = d_ff
+        self.head_dim = head_dim
+        self.w1 = Linear(in_features=d_model, out_features=d_ff)
+        self.w2 = Linear(in_features=d_ff, out_features=d_model)
+
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        # [..., d_model] -> [..., d_model]
+        x = self.w1(x)
+        x = rearrange(x, 'B T (nH Hs) -> B T nH Hs', Hs=self.head_dim)
+        s = torch.einsum('...id,...jd->...ij', x, x).softmax(dim=-1)
+        x = torch.einsum('...ij,...jd->...id', s, x)
+        x = rearrange(x, 'B T nH Hs -> B T (nH Hs)')
+        return self.w2(x)
+
+class SiLUFFN1(nn.Module):
+    """ FFN with SiLU activation """
+    d_model: int
+    d_ff: int
+
+    def __init__(self, d_model:int, d_ff:int) -> None:
+        super().__init__()
+        self.d_model = d_model
+        # should be d_ff = 4 * d_model, 
+        # then the parameter count = 2 * d_model * 4 * d_model = 8 * d_model^2
+        self.d_ff = d_ff
+        self.fc = Linear(in_features=d_model, out_features=d_ff)
+
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        # [..., d_model] -> [..., d_model]
+        return torch.einsum('...k,kd->...d', silu(self.fc(x)), self.fc.weight)
+
+
+class MHSiLUFFN1(nn.Module):
+    """ FFN with SiLU activation """
+    d_model: int
+    codebook_size: int
+    code_dim: int
+
+    def __init__(self, d_model:int, codebook_size:int, num_codebook:int=4, **kwargs) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.code_dim = d_model // num_codebook
+        self.codebook_size = codebook_size
+        self.weight = nn.Parameter(
+            torch.empty((num_codebook, codebook_size, self.code_dim), **kwargs)
+        )
+        self._init_weights()
+
+    def _init_weights(self):
+        std = math.sqrt(2.0 / (self.codebook_size + self.code_dim))
+        nn.init.trunc_normal_(self.weight, mean=0.0, std=std, a=-3*std, b=3*std)
+    
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        x = rearrange(x, 'B T (nH Hs) -> B nH T Hs', Hs=self.code_dim)
+        scores = torch.einsum('...htd,hcd->...htc', x, self.weight)
+        x = torch.einsum('...htc,hcd->...htd', silu(scores), self.weight)
+        x = rearrange(x, 'B nH T Hs -> B T (nH Hs)')
+        return x
+
+class MHSiLUFFN(nn.Module):
+    """ FFN with SiLU activation """
+    d_model: int
+    codebook_size: int
+    code_dim: int
+
+    def __init__(self, d_model:int, codebook_size:int, num_codebook:int=4, **kwargs) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.code_dim = d_model // num_codebook
+        self.codebook_size = codebook_size
+        self.weight1 = nn.Parameter(
+            torch.empty((num_codebook, codebook_size, self.code_dim), **kwargs)
+        )
+        self.weight2 = nn.Parameter(
+            torch.empty((num_codebook, codebook_size, self.code_dim), **kwargs)
+        )
+        self._init_weights()
+
+    def _init_weights(self):
+        std = math.sqrt(2.0 / (self.codebook_size + self.code_dim))
+        for weight in [self.weight1, self.weight2]:
+            nn.init.trunc_normal_(weight, mean=0.0, std=std, a=-3*std, b=3*std)
+    
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        x = rearrange(x, 'B T (nH Hs) -> B nH T Hs', Hs=self.code_dim)
+        scores = torch.einsum('...htd,hcd->...htc', x, self.weight1)
+        x = torch.einsum('...htc,hcd->...htd', silu(scores), self.weight2)
+        x = rearrange(x, 'B nH T Hs -> B T (nH Hs)')
+        return x
+
 class VQFFN(nn.Module):
     """ FFN with softmax """
     d_model: int
@@ -548,25 +649,51 @@ class TransformerBlock(nn.Module):
         )
 
         # Create FFN layer
+        # current result swiglu > silu > silu1 > mhvq > vq
+        # add norm to codebook and x: not so important(keep same performance), for ln2 maintain the stability
+        # w/o tie_embedding: vqsilu and mhvqsilu, not so important(keep same performance), for just one weight is enough
+        
         if ffn_type == 'swiglu':
             self.ffn = SwiGLU(d_model, d_ff)
         elif ffn_type == 'silu':
             self.ffn = SiLUFFN(d_model, d_ff)
+        elif ffn_type == 'head':
+            head_dim = kwargs.get('head_dim', d_ff // 4)
+            self.ffn = Head(d_model, d_ff, head_dim)
+        elif ffn_type == 'silu1':
+            # tie_embedding version of silu
+            self.ffn = SiLUFFN1(d_model, d_ff)
+        elif ffn_type == 'mhsilu1':
+            # use multihead code to increase codebook_size in a efficient way
+            num_codebook = kwargs.get('num_codebook', 4)
+            codebook_size = kwargs.get('codebook_size', d_ff)
+            self.ffn = MHSiLUFFN1(d_model, codebook_size, num_codebook)
+        elif ffn_type == 'mhsilu':
+            # use multihead code to increase codebook_size in a efficient way
+            num_codebook = kwargs.get('num_codebook', 4)
+            codebook_size = kwargs.get('codebook_size', d_ff)
+            self.ffn = MHSiLUFFN(d_model, codebook_size, num_codebook)
         elif ffn_type == 'vq':
+            # use softmax(x) to replace silu(x)
             self.ffn = VQFFN(d_model, d_ff)
         elif ffn_type == 'mhvq':
+            # use multihead code to increase codebook_size in a efficient way
             num_codebook = kwargs.get('num_codebook', 4)
             codebook_size = kwargs.get('codebook_size', d_ff)
             self.ffn = MHVQFFN(d_model, codebook_size, num_codebook)
         elif ffn_type == 'vq1':
+            # add norm to codebook and x of vqffn
             self.ffn = VQFFN1(d_model, d_ff)
         elif ffn_type == 'mhvq1':
+            # add norm to codebook and x of mhvqffn
             num_codebook = kwargs.get('num_codebook', 4)
             codebook_size = kwargs.get('codebook_size', d_ff)
             self.ffn = MHVQFFN1(d_model, codebook_size, num_codebook)
         elif ffn_type == 'vqsilu':
+            # tie_embedding ablation of vqffn
             self.ffn = VQSiLUFFN(d_model, d_ff)
         elif ffn_type == 'mhvqsilu':
+            # tie_embedding ablation of mhvqffn
             num_codebook = kwargs.get('num_codebook', 4)
             codebook_size = kwargs.get('codebook_size', d_ff)
             self.ffn = MHVQSiLUFFN(d_model, codebook_size, num_codebook)

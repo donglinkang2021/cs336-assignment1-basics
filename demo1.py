@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 np.random.seed(42)
 
 # 生成二维随机数据
-d = 768
+d = 2048
 x = np.random.randn(d, 2)
 
 # 计算sigmoid和x * sigmoid(x)
