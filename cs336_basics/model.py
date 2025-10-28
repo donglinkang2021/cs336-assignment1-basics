@@ -149,6 +149,52 @@ class SiLUFFN(nn.Module):
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         # [..., d_model] -> [..., d_model]
         return self.w2(silu(self.w1(x)))
+    
+
+class CacheLinear(nn.Module):
+    in_features: int
+    out_features: int
+    num_codebook: int
+    code_dim: int
+    down_proj: torch.Tensor
+    up_proj: torch.Tensor
+    
+    def __init__(self, in_features:int, out_features:int, num_codebook: int, code_dim: int, **kwargs) -> None:
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.num_codebook = num_codebook
+        self.code_dim = code_dim
+        self.down_proj = nn.Parameter(torch.empty((num_codebook, in_features, code_dim), **kwargs))
+        self.up_proj = nn.Parameter(torch.empty((num_codebook, out_features, code_dim), **kwargs))
+        self._init_weights()
+
+    def _init_weights(self):
+        down_std = math.sqrt(2.0 / (self.in_features + self.code_dim))
+        nn.init.trunc_normal_(self.down_proj, mean=0.0, std=down_std, a=-3*down_std, b=3*down_std)
+        up_std = math.sqrt(2.0 / (self.out_features + self.code_dim))
+        nn.init.trunc_normal_(self.up_proj, mean=0.0, std=up_std, a=-3*up_std, b=3*up_std)
+    
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        x = torch.einsum('...i,hic->...hc', x, self.down_proj)
+        x = torch.einsum('...hc,hoc->...ho', x, self.up_proj)
+        return norm(x.prod(dim=-2))
+
+class CacheSiLU(nn.Module):
+    d_model: int
+    d_ff: int
+    num_codebook: int
+    code_dim: int
+
+    def __init__(self, d_model:int, d_ff:int, num_codebook:int, code_dim:int, **kwargs) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.d_ff = d_ff
+        self.w1 = CacheLinear(d_model, d_ff, num_codebook, code_dim)
+        self.w2 = CacheLinear(d_ff, d_model, num_codebook, code_dim)
+    
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        return self.w2(silu(self.w1(x)))
 
 class Head(nn.Module):
     """ FFN without activation """
@@ -657,6 +703,13 @@ class TransformerBlock(nn.Module):
             self.ffn = SwiGLU(d_model, d_ff)
         elif ffn_type == 'silu':
             self.ffn = SiLUFFN(d_model, d_ff)
+        elif ffn_type == 'cache_silu':
+            num_codebook = kwargs.get('num_codebook', 4)
+            code_dim = kwargs.get('code_dim', 4)
+            self.ffn = CacheSiLU(d_model, d_ff, num_codebook, code_dim)
+        elif ffn_type == 'identity':
+            # Remove FFN layer - just use identity mapping
+            self.ffn = nn.Identity()
         elif ffn_type == 'head':
             head_dim = kwargs.get('head_dim', d_ff // 4)
             self.ffn = Head(d_model, d_ff, head_dim)
