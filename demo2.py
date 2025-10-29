@@ -77,7 +77,19 @@ base_w_mhsilu = TransformerLM(
     ffn_type="mhsilu",
     num_codebook=4,
     codebook_size=32,
-) 
+)
+base_w_outersilu = TransformerLM(
+    **base_config,
+    tie_embeddings = True,
+    ffn_type="outer_silu",
+    code_dims=[96, 32],
+)
+base_w_dynaswiglu = TransformerLM(
+    **base_config,
+    tie_embeddings = True,
+    ffn_type="dyna_swiglu",
+    code_dims=[64, 48],
+)
 
 # print(base_w_silu1) # You can uncomment this to see the model structure
 

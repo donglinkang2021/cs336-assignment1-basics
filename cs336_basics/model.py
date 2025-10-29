@@ -149,7 +149,172 @@ class SiLUFFN(nn.Module):
     def forward(self, x:torch.Tensor) -> torch.Tensor:
         # [..., d_model] -> [..., d_model]
         return self.w2(silu(self.w1(x)))
+
+def outer_product(mat: torch.Tensor, code_dims: list[int], split_dim: int = 0) -> torch.Tensor:
+    """
+    Compute outer product: chunk first, then compute outer product
+    Args:
+        mat: Tensor of shape (..., d) where one dimension will be split
+        code_dims: Sizes of each chunk
+        split_dim: Which dimension to split (0 or 1)
+    Returns:
+        Tensor of shape (prod(code_dims), d) if split_dim=0
+        Tensor of shape (n, prod(code_dims)) if split_dim=1
+    """
+    # Split the matrix according to code_dims
+    mats = mat.split(code_dims, dim=split_dim)
     
+    if len(mats) == 1:
+        return mats[0]
+    
+    if split_dim == 0:
+        # Original behavior: split first dimension
+        # Build einsum string, e.g., "az,bz,cz->abcz"
+        indices = [chr(ord('a') + i) for i in range(len(mats))]
+        einsum_str = ','.join(f'{idx}z' for idx in indices) + '->' + ''.join(indices) + 'z'
+        result = torch.einsum(einsum_str, *mats)
+        return result.reshape(-1, mat.shape[-1])
+    else:
+        # Split second dimension
+        # Build einsum string, e.g., "za,zb,zc->zabc"
+        indices = [chr(ord('a') + i) for i in range(len(mats))]
+        einsum_str = ','.join(f'z{idx}' for idx in indices) + '->' + 'z' + ''.join(indices)
+        result = torch.einsum(einsum_str, *mats)
+        return result.reshape(mat.shape[0], -1)
+
+class OuterLinear(nn.Module):
+    """Dynamic Weights via Outer Product of Multiple Low-Rank Tensors"""
+    feat_dim: int
+    code_dims: list[int]
+    out_features: int
+    weight: torch.Tensor
+    split_dim: int
+    
+    def __init__(self, feat_dim: int, code_dims: list[int], split_dim:int = 0, outer_norm:bool=True, **kwargs) -> None:
+        super().__init__()
+        self.feat_dim = feat_dim
+        self.code_dims = code_dims
+        self.split_dim = split_dim
+        self.out_features = math.prod(code_dims)
+        self.use_norm = outer_norm
+        
+        # Single weight matrix containing all code chunks
+        total_codes = sum(code_dims)
+        if split_dim == 0:
+            self.weight = nn.Parameter(torch.empty((total_codes, feat_dim), **kwargs))
+        else:
+            self.weight = nn.Parameter(torch.empty((feat_dim, total_codes), **kwargs))
+        self._init_weights()
+
+    def _init_weights(self):
+        # according to each chunk
+        start = 0
+        for code_dim in self.code_dims:
+            std = math.sqrt(2.0 / (self.feat_dim + code_dim))
+            nn.init.trunc_normal_(
+                self.weight[start:start+code_dim] if self.split_dim == 0 
+                    else self.weight[:, start:start+code_dim],
+                mean=0.0, std=std, a=-3*std, b=3*std
+            )
+            start += code_dim
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        dynamic_weight = outer_product(self.weight, self.code_dims, self.split_dim)
+        if self.use_norm:
+            return norm(torch.einsum('...i,oi->...o', x, dynamic_weight))
+        else:
+            return torch.einsum('...i,oi->...o', x, dynamic_weight)
+
+class OuterSiLU(nn.Module):
+    d_model: int
+    code_dims: list[int]
+
+    def __init__(self, d_model:int, code_dims:list[int], outer_norm:bool) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.w1 = OuterLinear(d_model, code_dims, 0, outer_norm)
+        self.w2 = OuterLinear(d_model, code_dims, 1, outer_norm)
+    
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        return self.w2(silu(self.w1(x)))
+
+def outer_product1(x: torch.Tensor, code_dims: list[int]) -> torch.Tensor:
+    """Compute outer product: chunk first, then compute outer product"""
+    # Split the matrix according to code_dims
+    mats = x.split(code_dims, dim=-1)
+    # build einsum like '...a,...b,...c->...abc'
+    letters = [chr(ord('a') + i) for i in range(len(mats))]
+    einsum_str = ','.join(f'...{l}' for l in letters) + '->' + '...' + ''.join(letters)
+    out = torch.einsum(einsum_str, *mats)
+    # ensure shape is (..., prod(code_dims))
+    return out.reshape(*x.shape[:-1], -1)
+
+class DynaLinear(nn.Module):
+    """Dynamic Tokens via Outer Product of Multiple Low-Rank Tensors"""
+    feat_dim: int
+    code_dims: list[int]
+    out_features: int
+    weight: torch.Tensor
+    
+    def __init__(self, feat_dim:int, code_dims:list[int], outer_norm:bool=True, **kwargs) -> None:
+        super().__init__()
+        self.feat_dim = feat_dim
+        self.code_dims = code_dims
+        self.out_features = math.prod(code_dims)
+        self.use_norm = outer_norm
+        
+        # Single weight matrix containing all code chunks
+        self.weight = nn.Parameter(torch.empty((feat_dim, sum(code_dims)), **kwargs))
+        self._init_weights()
+
+    def _init_weights(self):
+        # according to each chunk
+        start = 0
+        for code_dim in self.code_dims:
+            std = math.sqrt(2.0 / (self.feat_dim + code_dim))
+            nn.init.trunc_normal_(self.weight[:, start:start+code_dim], mean=0.0, std=std, a=-3*std, b=3*std)
+            start += code_dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = torch.einsum('...i,io->...o', x, self.weight)
+        x = outer_product1(x, self.code_dims)
+        return norm(x) if self.use_norm else x
+
+class DynaSiLU(nn.Module):
+    d_model: int
+    d_ff: int
+    code_dims: list[int]
+
+    def __init__(self, d_model:int, d_ff:int, code_dims:list[int], outer_norm:bool) -> None:
+        assert math.prod(code_dims) == d_ff, "Product of code_dims must equal d_ff"
+        super().__init__()
+        self.d_model = d_model
+        self.w1 = DynaLinear(d_model, code_dims, outer_norm)
+        self.w2 = Linear(d_ff, d_model)
+    
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        return self.w2(silu(self.w1(x)))
+
+class DynaSwiGLU(nn.Module):
+    """ SwiGLU FFN """
+    d_model: int
+    d_ff: int
+    
+    def __init__(self, d_model:int, d_ff:int, code_dims:list[int]) -> None:
+        assert math.prod(code_dims) == d_ff, "Product of code_dims must equal d_ff"
+        super().__init__()
+        self.d_model = d_model
+        # should be roughly d_ff = 8/3 * d_model, 
+        # then the parameter count = 3 * d_model * 8/3 * d_model = 8 * d_model^2
+        self.d_ff = d_ff
+        self.w1 = Linear(in_features=d_model, out_features=code_dims[0])
+        self.w2 = Linear(in_features=d_ff, out_features=d_model)
+        self.w3 = Linear(in_features=d_model, out_features=code_dims[1])
+    
+    def forward(self, x:torch.Tensor) -> torch.Tensor:
+        # [..., d_model] -> [..., d_model]
+        gc = torch.einsum('...i,...j->...ij', silu(self.w1(x)), self.w3(x)).reshape(*x.shape[:-1], -1)
+        return self.w2(gc)
 
 class CacheLinear(nn.Module):
     in_features: int
@@ -707,6 +872,17 @@ class TransformerBlock(nn.Module):
             num_codebook = kwargs.get('num_codebook', 4)
             code_dim = kwargs.get('code_dim', 4)
             self.ffn = CacheSiLU(d_model, d_ff, num_codebook, code_dim)
+        elif ffn_type == 'outer_silu':
+            code_dims = list(kwargs.get('code_dims', [int(math.sqrt(d_ff))] * 2))
+            outer_norm = kwargs.get('outer_norm', True)
+            self.ffn = OuterSiLU(d_model, code_dims, outer_norm)
+        elif ffn_type == 'dyna_silu':
+            code_dims = list(kwargs.get('code_dims', [int(math.sqrt(d_ff))] * 2))
+            outer_norm = kwargs.get('outer_norm', True)
+            self.ffn = DynaSiLU(d_model, d_ff, code_dims, outer_norm)
+        elif ffn_type == 'dyna_swiglu':
+            code_dims = list(kwargs.get('code_dims', [int(math.sqrt(d_ff))] * 2))
+            self.ffn = DynaSwiGLU(d_model, d_ff, code_dims)
         elif ffn_type == 'identity':
             # Remove FFN layer - just use identity mapping
             self.ffn = nn.Identity()
